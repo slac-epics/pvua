@@ -35,9 +35,12 @@ class Context:
             case _:
                 if pv_name not in self.pv_preference_cache:
                     # todo: improve selection logic, multithread
-                    if (value := self.get(pv_name, as_string, Preference.PVA)) is not None and not isinstance(value, TimeoutError):
-                        return str(value) if as_string else value
-                    elif (value := self.get(pv_name, as_string, Preference.CA)) is not None:
+                    try:
+                        if (value := self.get(pv_name, as_string, Preference.PVA)) is not None:
+                            return str(value) if as_string else value
+                    except TimeoutError:
+                        pass
+                    if (value := self.get(pv_name, as_string, Preference.CA)) is not None:
                         return value
                     else:
                         del self.pv_preference_cache[pv_name]
@@ -61,10 +64,14 @@ class Context:
                 return epics.caput(pv_name, value)
             case Preference.UNKNOWN:
                 if pv_name not in self.pv_preference_cache:
-                    # todo: determine correct preference based on timeouts
-                    self.put(pv_name, value, Preference.PVA)
-                    self.put(pv_name, value, Preference.CA)
-                    del self.pv_preference_cache[pv_name]
+                    # todo: improve selection logic, multithread
+                    try:
+                        return self.put(pv_name, value, Preference.PVA)
+                    except TimeoutError:
+                        pass
+                    if (value := self.put(pv_name, value, Preference.CA)) is None or value < 0:
+                        del self.pv_preference_cache[pv_name]
+                    return value
                 elif self.pv_preference_cache[pv_name] == Preference.UNKNOWN:
                     del self.pv_preference_cache[pv_name]
                     self.put(pv_name, value, Preference.UNKNOWN)
