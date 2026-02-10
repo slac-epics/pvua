@@ -1,5 +1,5 @@
-from pvua.context import Preference, Monitor, Context
+from pvua.context import Provider, Monitor, Context
 from pvua.pv import PV
 
 
-__all__ = ["Preference", "Monitor", "Context", "PV"]
+__all__ = ["Provider", "Monitor", "Context", "PV"]
