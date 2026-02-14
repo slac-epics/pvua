@@ -19,7 +19,8 @@ class Monitor:
 class Context:
     def __init__(self, pva_ctxt=None, provider_get=Provider.UNKNOWN, provider_put=Provider.UNKNOWN, provider_monitor=Provider.UNKNOWN):
         if pva_ctxt is None:
-            self.pva_ctxt = PVAContext('pva')
+            # noinspection PyTypeChecker
+            self.pva_ctxt = PVAContext('pva', nt=False)
         else:
             self.pva_ctxt = pva_ctxt
 
@@ -35,7 +36,7 @@ class Context:
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                return self.pva_ctxt.get(pv_name)
+                return self.pva_ctxt.get(pv_name)["value"]
             case Provider.CA:
                 return epics.caget(pv_name, as_string=as_string)
             case _:
@@ -43,7 +44,7 @@ class Context:
                     try:
                         if (value := self.get(pv_name, as_string, Provider.PVA)) is not None:
                             self.pv_provider_cache_get[pv_name] = Provider.PVA
-                            return str(value) if as_string else value
+                            return str(value['value']) if as_string else value['value']
                     except TimeoutError:
                         pass
                     if (value := self.get(pv_name, as_string, Provider.CA)) is not None:

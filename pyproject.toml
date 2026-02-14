@@ -17,6 +17,15 @@ classifiers = [
 ]
 license = "MIT"
 license-files = ["LICENSE"]
+dependencies = [
+    "p4p",
+    "pyepics",
+]
+
+[project.optional-dependencies]
+test = [
+    "caproto[standard]",
+]
 
 [project.urls]
 Homepage = "https://github.com/slac-epics/pvua"
