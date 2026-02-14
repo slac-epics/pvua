@@ -58,6 +58,34 @@ class Context:
     def __getitem__(self, pv_name: str):
         return self.get(pv_name)
 
+    def get_timevars(self, pv_name: str, provider_override: Provider = Provider.INHERIT):
+        provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
+        match provider:
+            case Provider.PVA:
+                time_data = self.pva_ctxt.get(pv_name)
+                if time_data is not None and 'timeStamp' in time_data:
+                    time_data = time_data['timeStamp']
+                    return {'timestamp': time_data['secondsPastEpoch'], 'posixseconds': time_data['secondsPastEpoch'], 'nanoseconds': time_data['nanoseconds']}
+                return None
+            case Provider.CA:
+                time_data = epics.PV(pv_name).get_timevars()
+                return {'timestamp': time_data['timestamp'], 'posixseconds': time_data['posixseconds'], 'nanoseconds': time_data['nanoseconds']}
+            case _:
+                if pv_name not in self.pv_provider_cache_get:
+                    try:
+                        if (value := self.get_timevars(pv_name, Provider.PVA)) is not None:
+                            self.pv_provider_cache_get[pv_name] = Provider.PVA
+                            return value
+                    except TimeoutError:
+                        pass
+                    if (value := self.get_timevars(pv_name, Provider.CA)) is not None:
+                        self.pv_provider_cache_get[pv_name] = Provider.CA
+                        return value
+                    else:
+                        return None
+                else:
+                    return self.get_timevars(pv_name, self.pv_provider_cache_get[pv_name])
+
     def put(self, pv_name: str, value, provider_override: Provider = Provider.INHERIT):
         provider = self.provider_put if provider_override == Provider.INHERIT else provider_override
         match provider:

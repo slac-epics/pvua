@@ -136,6 +136,7 @@ def main():
     print("pvget <name>")
     print("pvput <name> <value>")
     print("get <CA/PVA/UNK> <name>")
+    print("get_timevars <CA/PVA/UNK> <name>")
     print("put <CA/PVA/UNK> <name> <value>")
     print("\nType exit or press Ctrl+C to exit.\n")
 
@@ -171,6 +172,16 @@ def main():
                         case "unk":
                             print(f"{ctx.get(control_values[2], provider_override=Provider.UNKNOWN)}")
                         case _:
+                            print("Unknown argument at position 1")
+                case "get_timevars" if len(control_values) > 2:
+                    match control_values[1].lower():
+                        case "pva":
+                            print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.PVA)}")
+                        case "ca":
+                            print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.CA)}")
+                        case "unk":
+                            print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.UNKNOWN)}")
+                        case "_":
                             print("Unknown argument at position 1")
                 case "put" if len(control_values) > 3:
                     match control_values[1].lower():

@@ -16,6 +16,9 @@ class PV:
     def get(self, as_string: bool = False):
         return self.context.get(self.pv_name, as_string, self.provider_get_override)
 
+    def get_timevars(self):
+        return self.context.get_timevars(self.pv_name, self.provider_get_override)
+
     def put(self, value):
         return self.context.put(self.pv_name, value, self.provider_put_override)
 
