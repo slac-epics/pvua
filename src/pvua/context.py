@@ -44,7 +44,7 @@ class Context:
                     try:
                         if (value := self.get(pv_name, as_string, Provider.PVA)) is not None:
                             self.pv_provider_cache_get[pv_name] = Provider.PVA
-                            return str(value['value']) if as_string else value['value']
+                            return str(value) if as_string else value
                     except TimeoutError:
                         pass
                     if (value := self.get(pv_name, as_string, Provider.CA)) is not None:

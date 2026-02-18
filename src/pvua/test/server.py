@@ -1,5 +1,4 @@
 import asyncio
-import sys
 import threading
 import time
 
@@ -8,7 +7,6 @@ from caproto import ChannelType
 from p4p.server import Server as P4PServer
 from p4p.server.thread import SharedPV
 from p4p.nt import NTScalar
-from pvua import Context, Provider
 
 
 pv_data: dict = {
@@ -119,83 +117,15 @@ def start_pva_server():
 
 
 def main():
-    threads = []
-    if len(sys.argv) > 1:
-        for arg in sys.argv[1:]:
-            if arg.lower() == "--test-server":
-                threads = [start_ca_server(), start_pva_server()]
-                print("Serving PVs:")
-                for name, meta in pv_data.items():
-                    print(f"{name} = {meta['value']}")
-                break
+    threads = [start_ca_server(), start_pva_server()]
+    print("Serving PVs:")
+    for name, meta in pv_data.items():
+        print(f"{name} = {meta['value']}")
 
-    print("\nSupported commands:")
-    print("caget <name>")
-    print("cainfo <name>")
-    print("caput <name> <value>")
-    print("pvget <name>")
-    print("pvput <name> <value>")
-    print("get <CA/PVA/UNK> <name>")
-    print("get_timevars <CA/PVA/UNK> <name>")
-    print("put <CA/PVA/UNK> <name> <value>")
-    print("\nType exit or press Ctrl+C to exit.\n")
-
-    ctx = Context()
-
+    print("\nType exit or press Ctrl+C to exit.")
     try:
         while True:
-            control_values = [s.strip() for s in input("> ").split(' ')]
-            if control_values[0].lower() == "caget":
-                control_values[0] = "get"
-                control_values.insert(1, "ca")
-            elif control_values[0].lower() == "caput":
-                control_values[0] = "put"
-                control_values.insert(1, "ca")
-            elif control_values[0].lower() == "pvget":
-                control_values[0] = "get"
-                control_values.insert(1, "pva")
-            elif control_values[0].lower() == "pvput":
-                control_values[0] = "put"
-                control_values.insert(1, "pva")
-
-            match control_values[0].lower():
-                case "exit":
-                    break
-                case "cainfo" if len(control_values) > 1:
-                    print(f"{ctx.info_ca(control_values[1])}")
-                case "get" if len(control_values) > 2:
-                    match control_values[1].lower():
-                        case "pva":
-                            print(f"{ctx.get(control_values[2], provider_override=Provider.PVA)}")
-                        case "ca":
-                            print(f"{ctx.get(control_values[2], provider_override=Provider.CA)}")
-                        case "unk":
-                            print(f"{ctx.get(control_values[2], provider_override=Provider.UNKNOWN)}")
-                        case _:
-                            print("Unknown argument at position 1")
-                case "get_timevars" if len(control_values) > 2:
-                    match control_values[1].lower():
-                        case "pva":
-                            print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.PVA)}")
-                        case "ca":
-                            print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.CA)}")
-                        case "unk":
-                            print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.UNKNOWN)}")
-                        case "_":
-                            print("Unknown argument at position 1")
-                case "put" if len(control_values) > 3:
-                    match control_values[1].lower():
-                        case "pva":
-                            print(f"{ctx.put(control_values[2], control_values[3], provider_override=Provider.PVA)}")
-                        case "ca":
-                            print(f"{ctx.put(control_values[2], control_values[3], provider_override=Provider.CA)}")
-                        case "unk":
-                            print(f"{ctx.put(control_values[2], control_values[3], provider_override=Provider.UNKNOWN)}")
-                        case _:
-                            print("Unknown argument at position 1")
-                case _:
-                    print("Unknown argument at position 0")
-
+            time.sleep(0.25)
     except KeyboardInterrupt:
         pass
 

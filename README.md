@@ -2,14 +2,22 @@
 
 A light wrapper around p4p and pyepics.
 
+### CLI
+
+The following command to perform operations that can be done in code.
+
+```
+python -m pvua.cli <get/get_timevars/info/put> <ca/pva/unknown> <PV name> <value (if put specified)>
+```
+
 ### Testing
 
-Run the following command to show a CLI wrapping methods on the `Context` class.
+The following command will start a test IOC that serves three commands, which the CLI and library
+can interact with.
 
-If `--test-server` is provided, test PVs served over both CA and PVA will be created.
 The test dependency of `caproto` must be installed, installing the `test` optional dependencies
 can be done with `pip install pvua[test]`.
 
-```shell
-python -m pvua.test.server [--test-server]
+```
+python -m pvua.test.server
 ```
