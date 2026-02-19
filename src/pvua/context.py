@@ -24,13 +24,13 @@ class Context:
         else:
             self.pva_ctxt = pva_ctxt
 
-        self.provider_get     = provider_get     if provider_get     != Provider.INHERIT else Provider.UNKNOWN
-        self.provider_put     = provider_put     if provider_put     != Provider.INHERIT else Provider.UNKNOWN
-        self.provider_monitor = provider_monitor if provider_monitor != Provider.INHERIT else Provider.UNKNOWN
+        self.provider_get = provider_get     if provider_get     != Provider.INHERIT else Provider.UNKNOWN
+        self.provider_put = provider_put     if provider_put     != Provider.INHERIT else Provider.UNKNOWN
+        self.provider_mon = provider_monitor if provider_monitor != Provider.INHERIT else Provider.UNKNOWN
 
-        self.pv_provider_cache_get:     dict[str, Provider] = {}
-        self.pv_provider_cache_put:     dict[str, Provider] = {}
-        self.pv_provider_cache_monitor: dict[str, Provider] = {}
+        self.pv_provider_cache_get: dict[str, Provider] = {}
+        self.pv_provider_cache_put: dict[str, Provider] = {}
+        self.pv_provider_cache_mon: dict[str, Provider] = {}
 
     def get(self, pv_name: str, as_string: bool = False, provider_override: Provider = Provider.INHERIT):
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
@@ -116,7 +116,7 @@ class Context:
         return epics.cainfo(pv_name)
 
     def monitor(self, pv_name: str, callback, provider_override: Provider = Provider.UNKNOWN):
-        #provider = self.provider_monitor if provider_override == Provider.INHERIT else provider_override
+        #provider = self.provider_mon if provider_override == Provider.INHERIT else provider_override
         return Monitor()  # todo: monitor wrapper
         #ca.camonitor(pv_name, callback) # pv_name, writer, callback, timeout, monitor_delta
         #self.pva_ctxt.monitor(pv_name, callback) # pv_name, callback, request, notify_disconnect
@@ -131,6 +131,10 @@ class Context:
     def reset_provider_cache_put(self):
         self.pv_provider_cache_put.clear()
 
+    def reset_provider_cache_monitor(self):
+        self.pv_provider_cache_mon.clear()
+
     def reset_provider_caches(self):
         self.reset_provider_cache_get()
         self.reset_provider_cache_put()
+        self.reset_provider_cache_monitor()

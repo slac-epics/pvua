@@ -1,4 +1,4 @@
-from pvua import Context, Provider
+from .context import Context, Provider
 
 
 def cli(args: list[str]) -> int:
