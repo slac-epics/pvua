@@ -4,10 +4,19 @@ A light wrapper around p4p and pyepics.
 
 ### CLI
 
-The following command to perform operations that can be done in code.
+When the package is installed, new commands will be added that call into it.
+
+- `pvuaget <PV name> [ca/pva]`
+- `pvuainfo <PV name> [ca/pva]`
+  - Currently only Channel Access is supported for the info command.
+- `pvuaput <PV name> <PV value> [ca/pva]`
+
+If no provider is specified, both CA and PVA will be tried, with PVA tried first.
+
+The following command will run the "universal" interface that the installed commands hook into:
 
 ```
-python -m pvua.cli <get/get_timevars/info/put> <ca/pva/unknown> <PV name> <value (if put specified)>
+python -m pvua.cli <get/info/put> <ca/pva/unknown> <PV name> <value (if put specified)>
 ```
 
 ### Testing

@@ -27,6 +27,11 @@ test = [
     "caproto[standard]",
 ]
 
+[project.scripts]
+pvuaget = "pvua.cli:cli_get_entrypoint"
+pvuainfo = "pvua.cli:cli_info_entrypoint"
+pvuaput = "pvua.cli:cli_put_entrypoint"
+
 [project.urls]
 Homepage = "https://github.com/slac-epics/pvua"
 Issues = "https://github.com/slac-epics/pvua/issues"

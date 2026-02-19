@@ -113,7 +113,7 @@ class Context:
 
     def info_ca(self, pv_name: str):
         # Only supported by PyEPICS
-        return epics.cainfo(pv_name)
+        return epics.cainfo(pv_name, print_out=False)
 
     def monitor(self, pv_name: str, callback, provider_override: Provider = Provider.UNKNOWN):
         #provider = self.provider_mon if provider_override == Provider.INHERIT else provider_override

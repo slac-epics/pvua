@@ -1,64 +1,63 @@
+import sys
+
 from .context import Context, Provider
 
 
-def cli(args: list[str]) -> int:
-    if len(args) < 3:
-        print("Usage: <get/get_timevars/info/put> <ca/pva/unknown> <PV name> <value (if put specified)>")
-        return 1
+def str_to_provider(provider: str) -> Provider:
+    match provider.lower():
+        case "pva":
+            return Provider.PVA
+        case "ca":
+            return Provider.CA
+        case _:
+            return Provider.UNKNOWN
 
+
+def cli_universal(command: str, provider: Provider, pv_name: str, pv_value: str | None = None) -> int:
     ctx = Context()
 
-    control_values = [s.strip() for s in args]
-    match control_values[0].lower():
-        case "get" if len(control_values) > 2:
-            match control_values[1].lower():
-                case "pva":
-                    print(f"{ctx.get(control_values[2], provider_override=Provider.PVA)}")
-                case "ca":
-                    print(f"{ctx.get(control_values[2], provider_override=Provider.CA)}")
-                case "unknown":
-                    print(f"{ctx.get(control_values[2], provider_override=Provider.UNKNOWN)}")
-                case _:
-                    print(f"Unknown argument at position 1: {control_values[1]}")
-                    return 1
-        case "get_timevars" if len(control_values) > 2:
-            match control_values[1].lower():
-                case "pva":
-                    print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.PVA)}")
-                case "ca":
-                    print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.CA)}")
-                case "unknown":
-                    print(f"{ctx.get_timevars(control_values[2], provider_override=Provider.UNKNOWN)}")
-                case _:
-                    print(f"Unknown argument at position 1: {control_values[1]}")
-                    return 1
-        case "info" if len(control_values) > 1:
-            match control_values[1].lower():
-                case "pva" | "unknown":
-                    print("Info command unimplemented for PVA.")
-                case "ca":
-                    print(f"{ctx.info_ca(control_values[1])}")
-                case _:
-                    print(f"Unknown argument at position 1: {control_values[1]}")
-                    return 1
-        case "put" if len(control_values) > 3:
-            match control_values[1].lower():
-                case "pva":
-                    print(f"{ctx.put(control_values[2], control_values[3], provider_override=Provider.PVA)}")
-                case "ca":
-                    print(f"{ctx.put(control_values[2], control_values[3], provider_override=Provider.CA)}")
-                case "unknown":
-                    print(f"{ctx.put(control_values[2], control_values[3], provider_override=Provider.UNKNOWN)}")
-                case _:
-                    print(f"Unknown argument at position 1: {control_values[1]}")
-                    return 1
+    match command:
+        case "get":
+            print(f"{ctx.get(pv_name, provider_override=provider)}")
+            print(f"Time: {ctx.get_timevars(pv_name, provider_override=provider)}")
+        case "info":
+            if provider == Provider.PVA:
+                print("Info command unimplemented for PVA.")
+                return 1
+            else:
+                print(f"{ctx.info_ca(pv_name)}")
+        case "put":
+            ctx.put(pv_name, pv_value, provider_override=provider)
         case _:
-            print(f"Unknown argument at position 0: {control_values[0]}")
+            print(f"Unknown command: {command}")
             return 1
-
     return 0
 
 
+def cli_get_entrypoint() -> int:
+    if len(sys.argv) < 2:
+        print("Usage: <PV name> [ca/pva]")
+        return 1
+    return cli_universal("get", str_to_provider(sys.argv[2].strip()) if len(sys.argv) > 2 else Provider.UNKNOWN, sys.argv[1].strip())
+
+
+def cli_info_entrypoint() -> int:
+    if len(sys.argv) < 2:
+        print("Usage: <PV name> [ca/pva]")
+        return 1
+    return cli_universal("info", str_to_provider(sys.argv[2].strip()) if len(sys.argv) > 2 else Provider.UNKNOWN, sys.argv[1].strip())
+
+
+def cli_put_entrypoint() -> int:
+    if len(sys.argv) < 3:
+        print("Usage: <PV name> <PV value> [ca/pva]")
+        return 1
+    return cli_universal("put", str_to_provider(sys.argv[3].strip()) if len(sys.argv) > 3 else Provider.UNKNOWN, sys.argv[1].strip(), sys.argv[2].strip())
+
+
 if __name__ == "__main__":
-    import sys
-    sys.exit(cli(sys.argv[1:]))
+    if len(sys.argv) < 4:
+        print("Usage: <get/info/put> <ca/pva/unknown> <PV name> <value (if put specified)>")
+        sys.exit(1)
+
+    sys.exit(cli_universal(sys.argv[1].strip(), str_to_provider(sys.argv[2].strip()), sys.argv[3].strip(), sys.argv[4].strip() if len(sys.argv) > 4 else None))
