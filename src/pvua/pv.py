@@ -10,7 +10,7 @@ class PV:
 
     def __init__(self, context: Context, pv_name: str, provider_get_override: Provider = Provider.INHERIT, provider_put_override: Provider = Provider.INHERIT, provider_mon_override: Provider = Provider.INHERIT):
         self.context = context
-        self.pv_name = pv_name
+        self.pvname = pv_name
         self.provider_get_override = provider_get_override
         self.provider_put_override = provider_put_override
         self.provider_mon_override = provider_mon_override
@@ -29,26 +29,26 @@ class PV:
             return self.ca_obj.connect(timeout=timeout)
         return True
 
-    def wait_for_connect(self, timeout: int | float | None = None) -> bool:
+    def wait_for_connection(self, timeout: int | float | None = None) -> bool:
         if self.ca_obj is not None:
             self.ca_obj.wait_for_connection(timeout=timeout)
         return True
 
     def get(self, as_string: bool = False):
-        return self.context.get(self.pv_name, as_string, self.provider_get_override)
+        return self.context.get(self.pvname, as_string, self.provider_get_override)
 
     def get_timevars(self):
-        return self.context.get_timevars(self.pv_name, self.provider_get_override)
+        return self.context.get_timevars(self.pvname, self.provider_get_override)
 
     def put(self, value):
-        return self.context.put(self.pv_name, value, self.provider_put_override)
+        return self.context.put(self.pvname, value, self.provider_put_override)
 
     def info(self):
         # Only supported for CA
-        return self.context.info_ca(self.pv_name)
+        return self.context.info_ca(self.pvname)
 
     def __str__(self):
-        return f"{self.pv_name}: {info if (info := self.info()) is not None else "Failed to load information."}"
+        return self.pvname + ': ' + info if (info := self.info()) is not None else "Failed to load information."
 
     def monitor(self, callback):
-        return self.context.monitor(self.pv_name, callback, self.provider_mon_override)
+        return self.context.monitor(self.pvname, callback, self.provider_mon_override)
