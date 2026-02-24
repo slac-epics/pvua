@@ -20,7 +20,7 @@ class PV:
             (context.provider_put != Provider.PVA if provider_put_override == Provider.INHERIT else provider_put_override != Provider.PVA) or
             (context.provider_mon != Provider.PVA if provider_mon_override == Provider.INHERIT else provider_mon_override != Provider.PVA)
         ):
-            self.ca_obj = epics.PV(self.pv_name)
+            self.ca_obj = epics.PV(self.pvname)
         else:
             self.ca_obj = None
 
