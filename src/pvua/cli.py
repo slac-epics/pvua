@@ -1,4 +1,5 @@
 import sys
+import time
 
 from .context import Context, Provider
 
@@ -28,6 +29,15 @@ def cli_universal(command: str, provider: Provider, pv_name: str, pv_value: str 
                 print(f"{ctx.info_ca(pv_name)}")
         case "put":
             ctx.put(pv_name, pv_value, provider_override=provider)
+        case "monitor":
+            def do_print(**kwargs):
+                print(f'{kwargs["pvname"]} {kwargs["value"]}')
+            ctx.monitor(pv_name, callback=do_print, provider_override=provider)
+            try:
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
         case _:
             print(f"Unknown command: {command}")
             return 1
@@ -57,7 +67,7 @@ def cli_put_entrypoint() -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: <get/info/put> <ca/pva/unknown> <PV name> <value (if put specified)>")
+        print("Usage: <get/info/put/monitor> <ca/pva/unknown> <PV name> <value (if put specified)>")
         sys.exit(1)
 
     sys.exit(cli_universal(sys.argv[1].strip(), str_to_provider(sys.argv[2].strip()), sys.argv[3].strip(), sys.argv[4].strip() if len(sys.argv) > 4 else None))
