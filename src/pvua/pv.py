@@ -8,9 +8,9 @@ class PV:
     Intended to be a (mostly) drop-in replacement for PV objects from PyEPICS.
     """
 
-    def __init__(self, context: Context, pv_name: str, provider_get_override: Provider = Provider.INHERIT, provider_put_override: Provider = Provider.INHERIT, provider_mon_override: Provider = Provider.INHERIT):
+    def __init__(self, context: Context, pvname: str, provider_get_override: Provider = Provider.INHERIT, provider_put_override: Provider = Provider.INHERIT, provider_mon_override: Provider = Provider.INHERIT):
         self.context = context
-        self.pvname = pv_name
+        self.pvname = pvname
         self.provider_get_override = provider_get_override
         self.provider_put_override = provider_put_override
         self.provider_mon_override = provider_mon_override

@@ -14,25 +14,25 @@ def str_to_provider(provider: str) -> Provider:
             return Provider.UNKNOWN
 
 
-def cli_universal(command: str, provider: Provider, pv_name: str, pv_value: str | None = None) -> int:
+def cli_universal(command: str, provider: Provider, pvname: str, pv_value: str | None = None) -> int:
     ctx = Context()
 
     match command:
         case "get":
-            print(f"{ctx.get(pv_name, provider_override=provider)}")
-            print(f"Time: {ctx.get_timevars(pv_name, provider_override=provider)}")
+            print(f"{ctx.get(pvname, provider_override=provider)}")
+            print(f"Time: {ctx.get_timevars(pvname, provider_override=provider)}")
         case "info":
             if provider == Provider.PVA:
                 print("Info command unimplemented for PVA.")
                 return 1
             else:
-                print(f"{ctx.info_ca(pv_name)}")
+                print(f"{ctx.info_ca(pvname)}")
         case "put":
-            ctx.put(pv_name, pv_value, provider_override=provider)
+            ctx.put(pvname, pv_value, provider_override=provider)
         case "monitor":
             def do_print(**kwargs):
                 print(f'{kwargs["pvname"]} {kwargs["value"]}')
-            ctx.monitor(pv_name, callback=do_print, provider_override=provider)
+            ctx.monitor(pvname, callback=do_print, provider_override=provider)
             try:
                 while True:
                     time.sleep(1)

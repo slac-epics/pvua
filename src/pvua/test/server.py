@@ -73,14 +73,14 @@ def start_pva_server():
     pvs = {}
 
     class PVHandler:
-        def __init__(self, pv_name: str):
-            self.pv_name = pv_name
+        def __init__(self, pvname: str):
+            self.pvname = pvname
 
         def put(self, pv: SharedPV, op):
             value = op.value()
             with pv_lock:
-                pv_data[self.pv_name]["value"] = value["value"]
-            new_value = pvs[self.pv_name].current()
+                pv_data[self.pvname]["value"] = value["value"]
+            new_value = pvs[self.pvname].current()
             new_value["value"] = value["value"]
             pv.post(new_value)
             op.done()

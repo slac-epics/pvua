@@ -72,21 +72,21 @@ class Context:
         for k in pvs:
             if k not in self.pv_provider_cache:
                 # Just issue a GET and discard the result
-                self.get(pv_name=k, provider_override=Provider.UNKNOWN)
+                self.get(pvname=k, provider_override=Provider.UNKNOWN)
 
-    def get_provider(self, pv_name: str) -> Provider:
+    def get_provider(self, pvname: str) -> Provider:
         """Returns the provider for a specific PV, or Provider.UNKNOWN if no known provider"""
-        if pv_name in self.pv_provider_cache:
-            return self.pv_provider_cache[pv_name]
+        if pvname in self.pv_provider_cache:
+            return self.pv_provider_cache[pvname]
         return Provider.UNKNOWN
 
-    def get(self, pv_name: str, as_string: bool = False, provider_override: Provider = Provider.INHERIT):
+    def get(self, pvname: str, as_string: bool = False, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV
-        
+
         Parameters
         ----------
-        pv_name : str
+        pvname : str
             Name of the PV to GET
         as_string : bool
             If true, convert the value to string before returning
@@ -95,38 +95,38 @@ class Context:
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                return self.pva_ctxt.get(pv_name)["value"]
+                return self.pva_ctxt.get(pvname)["value"]
             case Provider.CA:
-                return epics.caget(pv_name, as_string=as_string)
+                return epics.caget(pvname, as_string=as_string)
             case _:
-                if pv_name not in self.pv_provider_cache:
+                if pvname not in self.pv_provider_cache:
                     try:
-                        if (value := self.get(pv_name, as_string, Provider.PVA)) is not None:
-                            self.pv_provider_cache[pv_name] = Provider.PVA
+                        if (value := self.get(pvname, as_string, Provider.PVA)) is not None:
+                            self.pv_provider_cache[pvname] = Provider.PVA
                             return str(value) if as_string else value
                     except TimeoutError:
                         pass
-                    if (value := self.get(pv_name, as_string, Provider.CA)) is not None:
-                        self.pv_provider_cache[pv_name] = Provider.CA
+                    if (value := self.get(pvname, as_string, Provider.CA)) is not None:
+                        self.pv_provider_cache[pvname] = Provider.CA
                         return value
                     else:
                         return None
                 else:
-                    return self.get(pv_name, as_string, self.pv_provider_cache[pv_name])
+                    return self.get(pvname, as_string, self.pv_provider_cache[pvname])
 
-    def __getitem__(self, pv_name: str):
-        return self.get(pv_name)
+    def __getitem__(self, pvname: str):
+        return self.get(pvname)
 
-    def get_timevars(self, pv_name: str, provider_override: Provider = Provider.INHERIT):
+    def get_timevars(self, pvname: str, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request, returning timestamp
 
         Parameters
         ----------
-        pv_name : str
+        pvname : str
             Name of the PV
         provider_override : Provider
-        
+
         Returns
         -------
         dict :
@@ -135,7 +135,7 @@ class Context:
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                time_data = self.pva_ctxt.get(pv_name)
+                time_data = self.pva_ctxt.get(pvname)
                 if time_data is not None and 'timeStamp' in time_data:
                     time_data = time_data['timeStamp']
                     return {
@@ -145,35 +145,35 @@ class Context:
                     }
                 return None
             case Provider.CA:
-                time_data = epics.PV(pv_name).get_timevars()
+                time_data = epics.PV(pvname).get_timevars()
                 return {
                     'timestamp': time_data['timestamp'],
                     'posixseconds': time_data['posixseconds'],
                     'nanoseconds': time_data['nanoseconds']
                 }
             case _:
-                if pv_name not in self.pv_provider_cache:
+                if pvname not in self.pv_provider_cache:
                     try:
-                        if (value := self.get_timevars(pv_name, Provider.PVA)) is not None:
-                            self.pv_provider_cache[pv_name] = Provider.PVA
+                        if (value := self.get_timevars(pvname, Provider.PVA)) is not None:
+                            self.pv_provider_cache[pvname] = Provider.PVA
                             return value
                     except TimeoutError:
                         pass
-                    if (value := self.get_timevars(pv_name, Provider.CA)) is not None:
-                        self.pv_provider_cache[pv_name] = Provider.CA
+                    if (value := self.get_timevars(pvname, Provider.CA)) is not None:
+                        self.pv_provider_cache[pvname] = Provider.CA
                         return value
                     else:
                         return None
                 else:
-                    return self.get_timevars(pv_name, self.pv_provider_cache[pv_name])
+                    return self.get_timevars(pvname, self.pv_provider_cache[pvname])
 
-    def put(self, pv_name: str, value, provider_override: Provider = Provider.INHERIT):
+    def put(self, pvname: str, value, provider_override: Provider = Provider.INHERIT):
         """
         Issue a PUT request to a specific PV
-        
+
         Parameters
         ----------
-        pv_name : str
+        pvname : str
             Name of the PV to PUT
         value : Any
             Value to put. Must be an unwrapped value of some kind.
@@ -181,39 +181,39 @@ class Context:
         provider = self.provider_put if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                return self.pva_ctxt.put(pv_name, value)
+                return self.pva_ctxt.put(pvname, value)
             case Provider.CA:
-                return epics.caput(pv_name, value)
+                return epics.caput(pvname, value)
             case _:
-                if pv_name not in self.pv_provider_cache:
+                if pvname not in self.pv_provider_cache:
                     try:
-                        value = self.put(pv_name, value, Provider.PVA)
-                        self.pv_provider_cache[pv_name] = Provider.PVA
+                        value = self.put(pvname, value, Provider.PVA)
+                        self.pv_provider_cache[pvname] = Provider.PVA
                         return value
                     except TimeoutError:
                         pass
-                    if (value := self.put(pv_name, value, Provider.CA)) is None or value < 0:
+                    if (value := self.put(pvname, value, Provider.CA)) is None or value < 0:
                         return None
-                    self.pv_provider_cache[pv_name] = Provider.CA
+                    self.pv_provider_cache[pvname] = Provider.CA
                     return value
                 else:
-                    return self.put(pv_name, value, self.pv_provider_cache[pv_name])
+                    return self.put(pvname, value, self.pv_provider_cache[pvname])
 
-    def __setitem__(self, pv_name: str, value):
-        return self.put(pv_name, value)
+    def __setitem__(self, pvname: str, value):
+        return self.put(pvname, value)
 
-    def info_ca(self, pv_name: str):
+    def info_ca(self, pvname: str):
         # Only supported by PyEPICS
-        return epics.cainfo(pv_name, print_out=False)
+        return epics.cainfo(pvname, print_out=False)
 
     def _posix2epics_ts(self, posixSecondsPastEpoch: int) -> int:
         """Convert a POSIX timestamp to an EPICS timestamp"""
         return posixSecondsPastEpoch - 631152000 # See POSIX_TIME_AT_EPICS_EPOCH in epicsTime.h
 
-    def monitor(self, pv_name: str, callback, provider_override: Provider = Provider.UNKNOWN) -> Monitor:
+    def monitor(self, pvname: str, callback, provider_override: Provider = Provider.UNKNOWN) -> Monitor:
         """
         Monitor a specific PV.
-        
+
         The callback's **kwargs matches what pyepics supplies to monitor callbacks, with the following exceptions:
         - 'cb_info', 'host' & 'access' are unsupported and always set to None
         - 'write_access' is unsupported and always set to True
@@ -222,10 +222,10 @@ class Context:
 
         Parameters
         ----------
-        pv_name : str
+        pvname : str
             Name of the PV
         callback : Callable
-        
+
         Returns
         -------
         Monitor :
@@ -235,31 +235,31 @@ class Context:
         mon = None
         match provider:
             case Provider.PVA:
-                sub = self.pva_ctxt.monitor(pv_name, lambda val, pv=pv_name: self._pv_monitor_callback(pv, val))
+                sub = self.pva_ctxt.monitor(pvname, lambda val, pv=pvname: self._pv_monitor_callback(pv, val))
                 if sub is None:
                     return False
-                mon = Monitor(pv_name, callback, self, sub)
+                mon = Monitor(pvname, callback, self, sub)
             case Provider.CA:
-                epics.camonitor(pv_name, writer=None, callback=self._ca_monitor_callback)
-                mon = Monitor(pv_name, callback, self, None)
+                epics.camonitor(pvname, writer=None, callback=self._ca_monitor_callback)
+                mon = Monitor(pvname, callback, self, None)
             case _:
-                if pv_name not in self.pv_provider_cache:
+                if pvname not in self.pv_provider_cache:
                     try:
-                        monitor = self.monitor(pv_name, callback, Provider.PVA)
-                        self.pv_provider_cache[pv_name] = Provider.PVA
+                        monitor = self.monitor(pvname, callback, Provider.PVA)
+                        self.pv_provider_cache[pvname] = Provider.PVA
                         return monitor
                     except TimeoutError:
                         pass
-                    monitor = self.monitor(pv_name, callback, Provider.CA)
-                    self.pv_provider_cache[pv_name] = Provider.CA
+                    monitor = self.monitor(pvname, callback, Provider.CA)
+                    self.pv_provider_cache[pvname] = Provider.CA
                     return monitor
                 else:
-                    return self.monitor(pv_name, callback, self.pv_provider_cache[pv_name])
+                    return self.monitor(pvname, callback, self.pv_provider_cache[pvname])
 
         # Add monitors to the list of registered monitors
-        if pv_name not in self.monitors:
-            self.monitors[pv_name] = []
-        self.monitors[pv_name].append(mon)
+        if pvname not in self.monitors:
+            self.monitors[pvname] = []
+        self.monitors[pvname].append(mon)
         return mon
 
     def close_monitor(self, monitor: Monitor):
@@ -380,9 +380,9 @@ class Context:
                     continue
                 mon.cb(**r.copy())
 
-    def rpc_pva(self, pv_name: str, value, **kwargs):
+    def rpc_pva(self, pvname: str, value, **kwargs):
         # Only supported by PVA
-        return self.pva_ctxt.rpc(pv_name, value, **kwargs)
+        return self.pva_ctxt.rpc(pvname, value, **kwargs)
 
     def reset_provider_cache(self):
         self.pv_provider_cache = {}
