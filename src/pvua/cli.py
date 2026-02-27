@@ -30,12 +30,10 @@ def cli_universal(command: str, provider: Provider, pvname: str, pv_value: str |
         case "put":
             ctx.put(pvname, pv_value, provider_override=provider)
         case "monitor":
-            def do_print(**kwargs):
-                print(f'{kwargs["pvname"]} {kwargs["value"]}')
-            ctx.monitor(pvname, callback=do_print, provider_override=provider)
+            ctx.monitor(pvname, callback=lambda **kwargs: print(kwargs["pvname"] + " " + str(kwargs["value"])), provider_override=provider)
             try:
                 while True:
-                    time.sleep(1)
+                    time.sleep(0.25)
             except KeyboardInterrupt:
                 pass
         case _:
@@ -63,6 +61,13 @@ def cli_put_entrypoint() -> int:
         print("Usage: <PV name> <PV value> [ca/pva]")
         return 1
     return cli_universal("put", str_to_provider(sys.argv[3].strip()) if len(sys.argv) > 3 else Provider.UNKNOWN, sys.argv[1].strip(), sys.argv[2].strip())
+
+
+def cli_monitor_entrypoint() -> int:
+    if len(sys.argv) < 2:
+        print("Usage: <PV name> [ca/pva]")
+        return 1
+    return cli_universal("monitor", str_to_provider(sys.argv[2].strip()) if len(sys.argv) > 2 else Provider.UNKNOWN, sys.argv[1].strip())
 
 
 if __name__ == "__main__":
