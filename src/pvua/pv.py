@@ -47,8 +47,8 @@ class PV:
         # Only supported for CA
         return self.context.info_ca(self.pvname)
 
-    def __str__(self):
-        return self.pvname + ': ' + info if (info := self.info()) is not None else "Failed to load information."
-
     def monitor(self, callback):
         return self.context.monitor(self.pvname, callback, self.provider_mon_override)
+
+    def __str__(self):
+        return self.pvname + ": " + info if (info := self.info()) is not None else "Failed to load information."

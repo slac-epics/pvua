@@ -1,10 +1,11 @@
+from enum import IntEnum
 import epics
 import math
 from p4p.client.thread import Context as PVAContext
+# noinspection PyProtectedMember
 from p4p.client.thread import Subscription
 from p4p import Value
-from enum import IntEnum
-from typing import Callable
+from typing import Any, Callable
 
 
 class Provider(IntEnum):
@@ -14,42 +15,54 @@ class Provider(IntEnum):
     PVA = 3
 
 
-# todo: monitor wrapper
-class Monitor:
-    def __init__(self, pv: str, cb: Callable, context, pva_sub: Subscription | None):
-        self.sub = pva_sub
-        self.context = context
-        self.pv = pv
-        self.cb = cb
-
-    def close(self):
-        """Close the subscription"""
-        if self.sub is not None:
-            self.sub.close()
-        self.context.close_monitor(self, self.pv)
-
-    def protocol(self) -> Provider:
-        """Returns the protocol used for this PV"""
-        return Provider.PVA if self.sub is not None else Provider.CA
-
 class Context:
+    class Monitor:
+        """
+        Wrapper around PV monitors. Do not instantiate directly, use the monitor method on a Context instance instead.
+        """
+
+        def __init__(self, pvname: str, callback: Callable, context: "Context", pva_subscription: Subscription | None):
+            self.pvname = pvname
+            self.callback = callback
+            self.context = context
+            self.pva_subscription = pva_subscription
+
+        def close(self) -> None:
+            """
+            Closes the monitor.
+            """
+            if self.pva_subscription is not None:
+                self.pva_subscription.close()
+
+            if self.pvname in self.context.pv_monitors:
+                self.context.pv_monitors[self.pvname].remove(self)
+
+        @property
+        def provider(self) -> Provider:
+            """
+            :return: The protocol used for the monitored PV
+            """
+            return Provider.PVA if self.pva_subscription is not None else Provider.CA
+
+    @classmethod
+    def _posix_timestamp_to_epics(cls, posix_seconds_past_epoch: int) -> int:
+        """
+        Convert a POSIX timestamp to an EPICS timestamp.
+        :param int posix_seconds_past_epoch: The POSIX timestamp to convert
+        :return: The EPICS timestamp
+        """
+        return posix_seconds_past_epoch - 631152000  # See POSIX_TIME_AT_EPICS_EPOCH in epicsTime.h
+
     def __init__(self, pva_ctxt=None, provider_get=Provider.UNKNOWN, provider_put=Provider.UNKNOWN, provider_monitor=Provider.UNKNOWN):
         """
-        Parameters
-        ----------
-        pva_ctxt : Context | None
-            p4p context to use, or None to create a new one.
-            NOTE: In order for this to work correctly, the PVA context must be created with nt=False.
-        provider_get : Provider
-            Provider override for gets
-        provider_put : Provider
-            Provider override for puts
-        provider_monitor : Provider
-            Provider override for monitors
+        :param pva_ctxt: p4p context to use, or None to create a new one. NOTE: In order for this to work correctly, the PVA context must be created with nt=False.
+        :param Provider provider_get: Provider override for gets
+        :param Provider provider_put: Provider override for puts
+        :param Provider provider_monitor: Provider override for monitors
         """
         if pva_ctxt is None:
             # noinspection PyTypeChecker
-            self.pva_ctxt = PVAContext('pva', nt=False)
+            self.pva_ctxt = PVAContext("pva", nt=False)
         else:
             self.pva_ctxt = pva_ctxt
 
@@ -58,39 +71,33 @@ class Context:
         self.provider_mon = provider_monitor if provider_monitor != Provider.INHERIT else Provider.UNKNOWN
 
         self.pv_provider_cache: dict[str, Provider] = {}
-        self.monitors: dict[str, list[Monitor]] = {}
+        self.pv_monitors: dict[str, list[Context.Monitor]] = {}
 
-    def determine_providers(self, pvs: list[str]):
+    def determine_providers(self, pvnames: list[str]) -> None:
         """
         Given a list of PVs, issue a GET per PV to cache the available provider.
-        
-        Parameters
-        ----------
-        pvs : list[str]
-            List of PVs to cache. If they're already cached, they will be skipped.
+        :param list[str] pvnames: List of PVs to cache. If they're already cached, they will be skipped.
         """
-        for k in pvs:
-            if k not in self.pv_provider_cache:
-                # Just issue a GET and discard the result
-                self.get(pvname=k, provider_override=Provider.UNKNOWN)
+        for pvname in pvnames:
+            if pvname not in self.pv_provider_cache:
+                # Issue a GET and discard the result
+                self.get(pvname=pvname, provider_override=Provider.UNKNOWN)
 
     def get_provider(self, pvname: str) -> Provider:
-        """Returns the provider for a specific PV, or Provider.UNKNOWN if no known provider"""
+        """
+        :param str pvname: PV to get provider of
+        :return: The provider for the given PV, or Provider.UNKNOWN if no known provider
+        """
         if pvname in self.pv_provider_cache:
             return self.pv_provider_cache[pvname]
         return Provider.UNKNOWN
 
     def get(self, pvname: str, as_string: bool = False, provider_override: Provider = Provider.INHERIT):
         """
-        Issue a GET request to a PV
-
-        Parameters
-        ----------
-        pvname : str
-            Name of the PV to GET
-        as_string : bool
-            If true, convert the value to string before returning
-        provider_override : Provider
+        Issue a GET request to a PV.
+        :param str pvname: Name of the PV to GET
+        :param bool as_string: If true, convert the value to string before returning
+        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
         """
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
@@ -119,37 +126,29 @@ class Context:
 
     def get_timevars(self, pvname: str, provider_override: Provider = Provider.INHERIT):
         """
-        Issue a GET request, returning timestamp
-
-        Parameters
-        ----------
-        pvname : str
-            Name of the PV
-        provider_override : Provider
-
-        Returns
-        -------
-        dict :
-            Dictionary containing timestamp
+        Issue a GET request to a PV, returning timestamp.
+        :param str pvname: Name of the PV
+        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
+        :return: Dictionary containing timestamp
         """
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
                 time_data = self.pva_ctxt.get(pvname)
-                if time_data is not None and 'timeStamp' in time_data:
-                    time_data = time_data['timeStamp']
+                if time_data is not None and "timeStamp" in time_data:
+                    time_data = time_data["timeStamp"]
                     return {
-                        'timestamp': self._posix2epics_ts(time_data['secondsPastEpoch']),
-                        'posixseconds': time_data['secondsPastEpoch'],
-                        'nanoseconds': time_data['nanoseconds']
+                        "timestamp": Context._posix_timestamp_to_epics(time_data["secondsPastEpoch"]),
+                        "posixseconds": time_data["secondsPastEpoch"],
+                        "nanoseconds": time_data["nanoseconds"]
                     }
                 return None
             case Provider.CA:
                 time_data = epics.PV(pvname).get_timevars()
                 return {
-                    'timestamp': time_data['timestamp'],
-                    'posixseconds': time_data['posixseconds'],
-                    'nanoseconds': time_data['nanoseconds']
+                    "timestamp": time_data["timestamp"],
+                    "posixseconds": time_data["posixseconds"],
+                    "nanoseconds": time_data["nanoseconds"]
                 }
             case _:
                 if pvname not in self.pv_provider_cache:
@@ -169,14 +168,10 @@ class Context:
 
     def put(self, pvname: str, value, provider_override: Provider = Provider.INHERIT):
         """
-        Issue a PUT request to a specific PV
-
-        Parameters
-        ----------
-        pvname : str
-            Name of the PV to PUT
-        value : Any
-            Value to put. Must be an unwrapped value of some kind.
+        Issue a PUT request to a PV.
+        :param str pvname: Name of the PV to PUT
+        :param value: Value to put. Must be an unwrapped value of some kind
+        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
         """
         provider = self.provider_put if provider_override == Provider.INHERIT else provider_override
         match provider:
@@ -202,34 +197,28 @@ class Context:
     def __setitem__(self, pvname: str, value):
         return self.put(pvname, value)
 
-    def info_ca(self, pvname: str):
-        # Only supported by PyEPICS
+    def info_ca(self, pvname: str) -> str:
+        """
+        Only supported by PyEPICS.
+        :param str pvname: Name of the PV
+        :return: A human-readable string with PV metadata
+        """
         return epics.cainfo(pvname, print_out=False)
 
-    def _posix2epics_ts(self, posixSecondsPastEpoch: int) -> int:
-        """Convert a POSIX timestamp to an EPICS timestamp"""
-        return posixSecondsPastEpoch - 631152000 # See POSIX_TIME_AT_EPICS_EPOCH in epicsTime.h
-
-    def monitor(self, pvname: str, callback, provider_override: Provider = Provider.UNKNOWN) -> Monitor:
+    def monitor(self, pvname: str, callback, provider_override: Provider = Provider.UNKNOWN) -> Monitor | None:
         """
         Monitor a specific PV.
 
-        The callback's **kwargs matches what pyepics supplies to monitor callbacks, with the following exceptions:
-        - 'cb_info', 'host' & 'access' are unsupported and always set to None
-        - 'write_access' is unsupported and always set to True
-        - 'ftype' and 'chid' are *only* set for CA callbacks for informational purposes
-        - 'pva_value' is set for PVA callbacks and provides the full p4p.Value structure
+        The callback's **kwargs matches what PyEPICS supplies to monitor callbacks, with the following exceptions:
+        - "cb_info", "host", and "access" are unsupported and always set to None
+        - "write_access" is unsupported and always set to True
+        - "ftype" and "chid" are *only* set for CA callbacks for informational purposes
+        - "pva_value" is set for PVA callbacks and provides the full p4p.Value structure
 
-        Parameters
-        ----------
-        pvname : str
-            Name of the PV
-        callback : Callable
-
-        Returns
-        -------
-        Monitor :
-            An instance of the Monitor class. This can be used to close out the monitor when it's no longer needed.
+        :param str pvname: Name of the PV
+        :param callback: Callback for when the PV value changes
+        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
+        :return: An instance of the Monitor class, which can be used to close the monitor
         """
         provider = self.provider_mon if provider_override == Provider.INHERIT else provider_override
         mon = None
@@ -237,152 +226,187 @@ class Context:
             case Provider.PVA:
                 sub = self.pva_ctxt.monitor(pvname, lambda val, pv=pvname: self._pv_monitor_callback(pv, val))
                 if sub is None:
-                    return False
-                mon = Monitor(pvname, callback, self, sub)
+                    return None
+                mon = Context.Monitor(pvname, callback, self, sub)
             case Provider.CA:
                 epics.camonitor(pvname, writer=None, callback=self._ca_monitor_callback)
-                mon = Monitor(pvname, callback, self, None)
+                mon = Context.Monitor(pvname, callback, self, None)
             case _:
                 if pvname not in self.pv_provider_cache:
                     try:
-                        monitor = self.monitor(pvname, callback, Provider.PVA)
-                        self.pv_provider_cache[pvname] = Provider.PVA
-                        return monitor
+                        if (monitor := self.monitor(pvname, callback, Provider.PVA)) is not None:
+                            self.pv_provider_cache[pvname] = Provider.PVA
+                            return monitor
                     except TimeoutError:
                         pass
-                    monitor = self.monitor(pvname, callback, Provider.CA)
-                    self.pv_provider_cache[pvname] = Provider.CA
-                    return monitor
+                    if (monitor := self.monitor(pvname, callback, Provider.CA)) is not None:
+                        self.pv_provider_cache[pvname] = Provider.CA
+                        return monitor
+                    else:
+                        return None
                 else:
                     return self.monitor(pvname, callback, self.pv_provider_cache[pvname])
 
         # Add monitors to the list of registered monitors
-        if pvname not in self.monitors:
-            self.monitors[pvname] = []
-        self.monitors[pvname].append(mon)
+        if pvname not in self.pv_monitors:
+            self.pv_monitors[pvname] = []
+        self.pv_monitors[pvname].append(mon)
         return mon
 
-    def close_monitor(self, monitor: Monitor):
-        """Close out a monitor"""
-        if monitor.pv not in self.monitors:
-            return
-        self.monitors[monitor.pv].remove(monitor)
-
     def _ca_monitor_callback(self, **kwargs):
-        """Proxies CA callbacks into the registered callbacks"""
-        if kwargs['pvname'] not in self.monitors:
+        """
+        Proxies CA callbacks into the registered callbacks.
+        :param kwargs: Callback information provided by PyEPICS
+        """
+        if kwargs["pvname"] not in self.pv_monitors:
             return
 
         # Modify kwargs to closely match what we get from a PVA callback.
         # This is just to avoid cases where CA monitors work with your code, and PVA monitors don't
-        for f in ['cb_info', 'host', 'access', 'pva_value']:
-            kwargs[f] = None
-        kwargs['write_access'] = True # Match what we do in PVA callbacks
+        for field in ["cb_info", "host", "access", "pva_value"]:
+            kwargs[field] = None
+        kwargs["write_access"] = True
 
-        for k in self.monitors[kwargs['pvname']]:
-            if k.protocol() != Provider.CA:
+        # Invoke all monitors for this PV
+        for monitor in self.pv_monitors[kwargs["pvname"]]:
+            if monitor.provider != Provider.CA:
                 continue
-            k.cb(**kwargs)
+            monitor.callback(**kwargs)
 
     def _pv_monitor_callback(self, pv: str, value: Value | Exception):
-        """Handles unpacking of NT structures into kwargs for the callback"""
-        if pv not in self.monitors:
+        """
+        Handles unpacking of NT structures into kwargs for registered callbacks.
+        :param str pv: Name of the PV
+        :param Value/Exception value: Callback information provided by p4p
+        """
+        if pv not in self.pv_monitors:
             return
 
         if isinstance(value, Value):
             # Init all fields to None
-            r = {}
-            fields = [
-                'pvname','value','char_value','count','ftype','type','status','precision','units','severity',
-                'timestamp','read_access','write_access','access','host','enum_strs','upper_disp_limit',
-                'lower_disp_limit','upper_alarm_limit','lower_alarm_limit','upper_warning_limit','lower_warning_limit',
-                'upper_ctrl_limit','lower_ctrl_limit','chid','cb_info'
-            ]
-            for k in fields:
-                r[k] = None
+            r: dict[str, Any] = {field: None for field in [
+                "pvname",
+                "read_access",
+                "write_access",
+                "value",
+                "char_value",
+                "count",
+                "ftype",
+                "type",
+                "status",
+                "precision",
+                "units",
+                "severity",
+                "timestamp",
+                "access","host",
+                "enum_strs",
+                "upper_disp_limit",
+                "lower_disp_limit",
+                "upper_alarm_limit",
+                "lower_alarm_limit",
+                "upper_warning_limit",
+                "lower_warning_limit",
+                "upper_ctrl_limit",
+                "lower_ctrl_limit",
+                "chid",
+                "cb_info",
+            ]}
 
-            r['pvname'] = pv
-            r['write_access'] = True # Probably not possible to determine with p4p
-            r['read_access'] = True
+            r["pvname"] = pv
+            r["read_access"] = True
+            r["write_access"] = True # Probably not possible to determine with p4p
 
-            r['pva_value'] = value
+            r["pva_value"] = value
 
             # TODO: enum_strs with NTEnum: "enum_strs: the list of enumeration strings"
 
             # TODO: Still need support for NTNDArray & NTEnum. The rest of the NT types in the spec are seldom used.
-            id = value.getID()
-            if id.startswith('epics:nt/NTScalar:'):
-                r['value'] = value['value']
-                r['type'] = type(value['value'])
-                r['char_value'] = str(value['value'])
-            elif id.startswith('epics:nt/NTScalarArray:'):
+            pva_id = value.getID()
+            if pva_id.startswith("epics:nt/NTScalar:"):
+                r["value"] = value["value"]
+                r["type"] = type(value["value"])
+                r["char_value"] = str(value["value"])
+            elif pva_id.startswith("epics:nt/NTScalarArray:"):
                 # Untested -- Yell at Jeremy L. if this throws an error
-                r['value'] = value['value']
-                r['type'] = type(value['value'][0])
-                r['char_value'] = str(' '.join(value['value']))
-                r['count'] = len(value['value'])
-            elif id.startswith('epics:nt/NTTable:'):
+                r["value"] = value["value"]
+                r["type"] = type(value["value"][0])
+                r["char_value"] = str(" ".join(value["value"]))
+                r["count"] = len(value["value"])
+            elif pva_id.startswith("epics:nt/NTTable:"):
                 # Untested -- Yell at Jeremy L. if this throws an error
                 tab = {}
                 n = 0
-                for l in value['labels']:
-                    tab[l] = value['value'][n]
+                for l in value["labels"]:
+                    tab[l] = value["value"][n]
                     n += 1
-                r['type'] = dict
-                r['value'] = tab
-                r['char_value'] = str(tab)
-                r['count'] = len(tab.keys())
+                r["type"] = dict
+                r["value"] = tab
+                r["char_value"] = str(tab)
+                r["count"] = len(tab.keys())
             else:
-                raise TypeError(f'Unsupported NT type {id}')
+                raise TypeError(f"Unsupported NT type {pva_id}")
 
-            def unpack_fl(fl) -> float | None:
-                """Replace NaN with None, which signifies 'not provided' in pyepics"""
-                return None if math.isnan(fl) else fl
+            def unpack_float(f: float) -> float | None:
+                """
+                Replace NaN with None, which signifies "not provided" in PyEPICS.
+                :param float f: Float to unpack
+                :return: The float value, or None if given NaN value
+                """
+                return None if math.isnan(f) else f
 
             # Unpack display_t
-            if 'display' in value:
-                v = value['display']
-                r['precision'] = v['precision']
-                r['units'] = v['units']
-                r['upper_disp_limit'] = unpack_fl(v['limitHigh'])
-                r['lower_disp_limit'] = unpack_fl(v['limitLow'])
+            if "display" in value.keys():
+                v = value["display"]
+                r["precision"] = v["precision"]
+                r["units"] = v["units"]
+                r["upper_disp_limit"] = unpack_float(v["limitHigh"])
+                r["lower_disp_limit"] = unpack_float(v["limitLow"])
                 # TODO: enum_strs
 
             # Unpack alarm_t
-            if 'alarm' in value:
-                v = value['alarm']
-                r['severity'] = v['severity']
-                r['status'] = v['status']
+            if "alarm" in value.keys():
+                v = value["alarm"]
+                r["severity"] = v["severity"]
+                r["status"] = v["status"]
 
             # Unpack timestamp_t
-            if 'timeStamp' in value:
+            if "timeStamp" in value.keys():
                 # TODO: Posix or EPICS time?
-                r['timestamp'] = float(value['timeStamp']['secondsPastEpoch']) + value['timeStamp']['nanoseconds'] / 1e9
+                r["timestamp"] = float(value["timeStamp"]["secondsPastEpoch"]) + value["timeStamp"]["nanoseconds"] / 1e9
 
             # Unpack control_t
-            if 'control' in value:
-                v = value['control']
-                r['lower_ctrl_limit'] = unpack_fl(v['lowLimit'])
-                r['upper_ctrl_limit'] = unpack_fl(v['highLimit'])
+            if "control" in value.keys():
+                v = value["control"]
+                r["lower_ctrl_limit"] = unpack_float(v["lowLimit"])
+                r["upper_ctrl_limit"] = unpack_float(v["highLimit"])
                 # TODO: Min step?
 
             # Unpack valueAlarm_t
-            if 'valueAlarm' in value:
-                v = value['valueAlarm']
-                r['upper_alarm_limit'] = unpack_fl(v['highAlarmLimit'])
-                r['lower_alarm_limit'] = unpack_fl(v['lowAlarm'])
-                r['upper_warning_limit'] = unpack_fl(v['highWarningLimit'])
-                r['lower_warning_limit'] = unpack_fl(v['lowWarningLimit'])
+            if "valueAlarm" in value.keys():
+                v = value["valueAlarm"]
+                r["upper_alarm_limit"] = unpack_float(v["highAlarmLimit"])
+                r["lower_alarm_limit"] = unpack_float(v["lowAlarm"])
+                r["upper_warning_limit"] = unpack_float(v["highWarningLimit"])
+                r["lower_warning_limit"] = unpack_float(v["lowWarningLimit"])
 
             # Invoke all monitors for this PV
-            for mon in self.monitors[pv]:
-                if mon.protocol() != Provider.PVA:
+            for monitor in self.pv_monitors[pv]:
+                if monitor.provider != Provider.PVA:
                     continue
-                mon.cb(**r.copy())
+                monitor.callback(**r.copy())
 
-    def rpc_pva(self, pvname: str, value, **kwargs):
-        # Only supported by PVA
+    def rpc_pva(self, pvname: str, value: Value, **kwargs):
+        """
+        Only supported by p4p.
+        :param str pvname: Name of the PV
+        :param Value value: Value to put
+        :param kwargs: Extra arguments for p4p
+        :return: A p4p Value, or an exception
+        """
         return self.pva_ctxt.rpc(pvname, value, **kwargs)
 
-    def reset_provider_cache(self):
+    def reset_provider_cache(self) -> None:
+        """
+        Resets the provider cache.
+        """
         self.pv_provider_cache = {}

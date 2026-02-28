@@ -120,7 +120,7 @@ def main():
     threads = [start_ca_server(), start_pva_server()]
     print("Serving PVs:")
     for name, meta in pv_data.items():
-        print(f"{name} = {meta['value']}")
+        print(name + " = " + str(meta["value"]))
 
     print("\nType exit or press Ctrl+C to exit.")
     try:
