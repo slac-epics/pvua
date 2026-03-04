@@ -326,6 +326,13 @@ class Context:
                 r["value"] = value["value"]
                 r["type"] = type(value["value"])
                 r["char_value"] = str(value["value"])
+            elif pva_id.startswith("epics:nt/NTNDArray:"):
+                r["value"] = value["value"]
+                r["type"] = type(value["value"][0])
+                r["count"] = 0
+                for dim in value["dimension"]:
+                    r["count"] += dim["size"]
+                r["char_value"] = str(value["value"]) # __repr__ seems good enough here
             elif pva_id.startswith("epics:nt/NTScalarArray:"):
                 # Untested -- Yell at Jeremy L. if this throws an error
                 r["value"] = value["value"]
