@@ -44,14 +44,132 @@ class Context:
             """
             return Provider.PVA if self.pva_subscription is not None else Provider.CA
 
-    @classmethod
-    def _posix_timestamp_to_epics(cls, posix_seconds_past_epoch: int) -> int:
+    @staticmethod
+    def _posix_timestamp_to_epics(posix_seconds_past_epoch: int) -> int:
         """
         Convert a POSIX timestamp to an EPICS timestamp.
         :param int posix_seconds_past_epoch: The POSIX timestamp to convert
         :return: The EPICS timestamp
         """
         return posix_seconds_past_epoch - 631152000  # See POSIX_TIME_AT_EPICS_EPOCH in epicsTime.h
+
+    @staticmethod
+    def _unpack_float(f: float) -> float | None:
+        """
+        Replace NaN with None, which signifies "not provided" in PyEPICS.
+        :param float f: Float to unpack
+        :return: The float value, or None if given NaN value
+        """
+        return None if math.isnan(f) else f
+
+    @staticmethod
+    def _unpack_pva_value(value: Value, init_all_keys=False) -> dict[str, Any]:
+        if not isinstance(value, Value):
+            return {}
+
+        out: dict[str, Any] = {}
+        if init_all_keys:
+            # Init all fields to None
+            out = {field: None for field in [
+                "read_access",
+                "write_access",
+                "value",
+                "char_value",
+                "count",
+                "ftype",
+                "type",
+                "status",
+                "precision",
+                "units",
+                "severity",
+                "timestamp",
+                "access",
+                "host",
+                "enum_strs",
+                "upper_disp_limit",
+                "lower_disp_limit",
+                "upper_alarm_limit",
+                "lower_alarm_limit",
+                "upper_warning_limit",
+                "lower_warning_limit",
+                "upper_ctrl_limit",
+                "lower_ctrl_limit",
+                "chid",
+                "cb_info",
+            ]}
+
+        out["read_access"] = True
+        out["write_access"] = True # Probably not possible to determine with p4p
+
+        out["pva_value"] = value
+
+        # TODO: enum_strs with NTEnum: "enum_strs: the list of enumeration strings"
+
+        # TODO: Still need support for NTEnum. The rest of the NT types in the spec are seldom used.
+        pva_id = value.getID()
+        if pva_id.startswith("epics:nt/NTScalar:"):
+            out["value"] = value["value"]
+            out["type"] = type(value["value"])
+            out["char_value"] = str(value["value"])
+        elif pva_id.startswith("epics:nt/NTNDArray:"):
+            out["value"] = value["value"]
+            out["type"] = type(value["value"][0])
+            out["count"] = 0
+            for dim in value["dimension"]:
+                out["count"] += dim["size"]
+            out["char_value"] = repr(value["value"])  # seems good enough here
+        elif pva_id.startswith("epics:nt/NTScalarArray:"):
+            # Untested -- Yell at Jeremy L. if this throws an error
+            out["value"] = value["value"]
+            out["type"] = type(value["value"][0])
+            out["char_value"] = str(" ".join(value["value"]))
+            out["count"] = len(value["value"])
+        elif pva_id.startswith("epics:nt/NTTable:"):
+            # Untested -- Yell at Jeremy L. if this throws an error
+            tab = {}
+            n = 0
+            for l in value["labels"]:
+                tab[l] = value["value"][n]
+                n += 1
+            out["type"] = dict
+            out["value"] = tab
+            out["char_value"] = str(tab)
+            out["count"] = len(tab.keys())
+        else:
+            raise TypeError(f"Unsupported NT type {pva_id}")
+
+        out = {}
+        if "alarm" in value.keys():
+            out.update({
+                "status": value["alarm"]["status"],
+                "severity": value["alarm"]["severity"],
+            })
+        if "display" in value.keys():
+            out.update({
+                "precision": value["display"]["precision"],
+                "units": value["display"]["units"],
+                "upper_disp_limit": Context._unpack_float(value["display"]["limitHigh"]),
+                "lower_disp_limit": Context._unpack_float(value["display"]["limitLow"]),
+            })
+        if "valueAlarm" in value.keys():
+            out.update({
+                "upper_alarm_limit": Context._unpack_float(value["valueAlarm"]["highAlarmLimit"]),
+                "lower_alarm_limit": Context._unpack_float(value["valueAlarm"]["lowAlarm"]),
+                "upper_warning_limit": Context._unpack_float(value["valueAlarm"]["highWarningLimit"]),
+                "lower_warning_limit": Context._unpack_float(value["valueAlarm"]["lowWarningLimit"]),
+            })
+        if "control" in value.keys():
+            out.update({
+                "upper_ctrl_limit": Context._unpack_float(value["control"]["highLimit"]),
+                "lower_ctrl_limit": Context._unpack_float(value["control"]["lowLimit"]),
+            })
+        if "timeStamp" in value.keys():
+            # TODO: check if posix or EPICS time
+            out["timestamp"] = float(value["timeStamp"]["secondsPastEpoch"]) + (value["timeStamp"]["nanoseconds"] / 1e9)
+            out["posixseconds"] = value["timeStamp"]["secondsPastEpoch"],
+            out["nanoseconds"] = value["timeStamp"]["nanoseconds"]
+
+        return out
 
     def __init__(self, pva_ctxt=None, provider_get=Provider.UNKNOWN, provider_put=Provider.UNKNOWN, provider_monitor=Provider.UNKNOWN):
         """
@@ -124,32 +242,76 @@ class Context:
     def __getitem__(self, pvname: str):
         return self.get(pvname)
 
+    def get_ctrlvars(self, pvname: str, provider_override: Provider = Provider.INHERIT):
+        """
+        Issue a GET request to a PV, returning control variables.
+        :param str pvname: Name of the PV
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
+        :return: Dictionary containing control variables
+        """
+        provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
+        match provider:
+            case Provider.PVA:
+                value = self.pva_ctxt.get(pvname)
+                if value is not None:
+                    ctrl_data = Context._unpack_pva_value(value)
+                    return {key: ctrl_data[key] for key in (
+                        "status", "severity", "precision", "units", "enum_strs",
+                        "upper_disp_limit", "lower_disp_limit", "upper_alarm_limit",
+                        "lower_alarm_limit", "upper_warning_limit", "lower_warning_limit",
+                        "upper_ctrl_limit", "lower_ctrl_limit"
+                    ) if key in ctrl_data}
+                return None
+            case Provider.CA:
+                ctrl_data = epics.PV(pvname).get_ctrlvars()
+                if ctrl_data is not None:
+                    return {key: ctrl_data[key] for key in (
+                        "status", "severity", "precision", "units", "enum_strs",
+                        "upper_disp_limit", "lower_disp_limit", "upper_alarm_limit",
+                        "lower_alarm_limit", "upper_warning_limit", "lower_warning_limit",
+                        "upper_ctrl_limit", "lower_ctrl_limit"
+                    ) if key in ctrl_data}
+                return None
+            case _:
+                if pvname not in self.pv_provider_cache:
+                    try:
+                        if (value := self.get_ctrlvars(pvname, Provider.PVA)) is not None:
+                            self.pv_provider_cache[pvname] = Provider.PVA
+                            return value
+                    except TimeoutError:
+                        pass
+                    if (value := self.get_ctrlvars(pvname, Provider.CA)) is not None:
+                        self.pv_provider_cache[pvname] = Provider.CA
+                        return value
+                    else:
+                        return None
+                else:
+                    return self.get_ctrlvars(pvname, self.pv_provider_cache[pvname])
+
     def get_timevars(self, pvname: str, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV, returning timestamp.
         :param str pvname: Name of the PV
-        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
         :return: Dictionary containing timestamp
         """
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                time_data = self.pva_ctxt.get(pvname)
-                if time_data is not None and "timeStamp" in time_data:
-                    time_data = time_data["timeStamp"]
-                    return {
-                        "timestamp": Context._posix_timestamp_to_epics(time_data["secondsPastEpoch"]),
-                        "posixseconds": time_data["secondsPastEpoch"],
-                        "nanoseconds": time_data["nanoseconds"]
-                    }
+                value = self.pva_ctxt.get(pvname)
+                if value is not None:
+                    time_data = Context._unpack_pva_value(value)
+                    return {key: time_data[key] for key in (
+                        "timestamp", "posixseconds", "nanoseconds",
+                    ) if key in time_data}
                 return None
             case Provider.CA:
                 time_data = epics.PV(pvname).get_timevars()
-                return {
-                    "timestamp": time_data["timestamp"],
-                    "posixseconds": time_data["posixseconds"],
-                    "nanoseconds": time_data["nanoseconds"]
-                }
+                if time_data is not None:
+                    return {key: time_data[key] for key in (
+                        "timestamp", "posixseconds", "nanoseconds",
+                    ) if key in time_data}
+                return None
             case _:
                 if pvname not in self.pv_provider_cache:
                     try:
@@ -279,128 +441,17 @@ class Context:
         :param str pv: Name of the PV
         :param Value/Exception value: Callback information provided by p4p
         """
-        if pv not in self.pv_monitors:
+        if pv not in self.pv_monitors or not isinstance(value, Value):
             return
 
-        if isinstance(value, Value):
-            # Init all fields to None
-            r: dict[str, Any] = {field: None for field in [
-                "pvname",
-                "read_access",
-                "write_access",
-                "value",
-                "char_value",
-                "count",
-                "ftype",
-                "type",
-                "status",
-                "precision",
-                "units",
-                "severity",
-                "timestamp",
-                "access","host",
-                "enum_strs",
-                "upper_disp_limit",
-                "lower_disp_limit",
-                "upper_alarm_limit",
-                "lower_alarm_limit",
-                "upper_warning_limit",
-                "lower_warning_limit",
-                "upper_ctrl_limit",
-                "lower_ctrl_limit",
-                "chid",
-                "cb_info",
-            ]}
+        r = Context._unpack_pva_value(value, init_all_keys=True)
+        r["pvname"] = pv
 
-            r["pvname"] = pv
-            r["read_access"] = True
-            r["write_access"] = True # Probably not possible to determine with p4p
-
-            r["pva_value"] = value
-
-            # TODO: enum_strs with NTEnum: "enum_strs: the list of enumeration strings"
-
-            # TODO: Still need support for NTNDArray & NTEnum. The rest of the NT types in the spec are seldom used.
-            pva_id = value.getID()
-            if pva_id.startswith("epics:nt/NTScalar:"):
-                r["value"] = value["value"]
-                r["type"] = type(value["value"])
-                r["char_value"] = str(value["value"])
-            elif pva_id.startswith("epics:nt/NTNDArray:"):
-                r["value"] = value["value"]
-                r["type"] = type(value["value"][0])
-                r["count"] = 0
-                for dim in value["dimension"]:
-                    r["count"] += dim["size"]
-                r["char_value"] = str(value["value"]) # __repr__ seems good enough here
-            elif pva_id.startswith("epics:nt/NTScalarArray:"):
-                # Untested -- Yell at Jeremy L. if this throws an error
-                r["value"] = value["value"]
-                r["type"] = type(value["value"][0])
-                r["char_value"] = str(" ".join(value["value"]))
-                r["count"] = len(value["value"])
-            elif pva_id.startswith("epics:nt/NTTable:"):
-                # Untested -- Yell at Jeremy L. if this throws an error
-                tab = {}
-                n = 0
-                for l in value["labels"]:
-                    tab[l] = value["value"][n]
-                    n += 1
-                r["type"] = dict
-                r["value"] = tab
-                r["char_value"] = str(tab)
-                r["count"] = len(tab.keys())
-            else:
-                raise TypeError(f"Unsupported NT type {pva_id}")
-
-            def unpack_float(f: float) -> float | None:
-                """
-                Replace NaN with None, which signifies "not provided" in PyEPICS.
-                :param float f: Float to unpack
-                :return: The float value, or None if given NaN value
-                """
-                return None if math.isnan(f) else f
-
-            # Unpack display_t
-            if "display" in value.keys():
-                v = value["display"]
-                r["precision"] = v["precision"]
-                r["units"] = v["units"]
-                r["upper_disp_limit"] = unpack_float(v["limitHigh"])
-                r["lower_disp_limit"] = unpack_float(v["limitLow"])
-                # TODO: enum_strs
-
-            # Unpack alarm_t
-            if "alarm" in value.keys():
-                v = value["alarm"]
-                r["severity"] = v["severity"]
-                r["status"] = v["status"]
-
-            # Unpack timestamp_t
-            if "timeStamp" in value.keys():
-                # TODO: Posix or EPICS time?
-                r["timestamp"] = float(value["timeStamp"]["secondsPastEpoch"]) + value["timeStamp"]["nanoseconds"] / 1e9
-
-            # Unpack control_t
-            if "control" in value.keys():
-                v = value["control"]
-                r["lower_ctrl_limit"] = unpack_float(v["lowLimit"])
-                r["upper_ctrl_limit"] = unpack_float(v["highLimit"])
-                # TODO: Min step?
-
-            # Unpack valueAlarm_t
-            if "valueAlarm" in value.keys():
-                v = value["valueAlarm"]
-                r["upper_alarm_limit"] = unpack_float(v["highAlarmLimit"])
-                r["lower_alarm_limit"] = unpack_float(v["lowAlarm"])
-                r["upper_warning_limit"] = unpack_float(v["highWarningLimit"])
-                r["lower_warning_limit"] = unpack_float(v["lowWarningLimit"])
-
-            # Invoke all monitors for this PV
-            for monitor in self.pv_monitors[pv]:
-                if monitor.provider != Provider.PVA:
-                    continue
-                monitor.callback(**r.copy())
+        # Invoke all monitors for this PV
+        for monitor in self.pv_monitors[pv]:
+            if monitor.provider != Provider.PVA:
+                continue
+            monitor.callback(**r.copy())
 
     def rpc_pva(self, pvname: str, value: Value, **kwargs):
         """
