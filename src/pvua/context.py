@@ -210,34 +210,48 @@ class Context:
             return self.pv_provider_cache[pvname]
         return Provider.UNKNOWN
 
-    def get(self, pvname: str, as_string: bool = False, provider_override: Provider = Provider.INHERIT):
+    def get(self, pvname: str, count: int | None = None, as_string: bool = False, as_numpy: bool = False, timeout: float | None = None, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV.
+        :param int/None count: Explicit limit of the size of array values
         :param str pvname: Name of the PV to GET
         :param bool as_string: If true, convert the value to string before returning
-        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
+        :param bool as_numpy: If true, convert array to a NumPy array before returning
+        :param float/None timeout: Timeout in seconds to wait for a response
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
         """
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                return self.pva_ctxt.get(pvname)["value"]
+                value = self.pva_ctxt.get(pvname, timeout=timeout)["value"]
+                if as_string:
+                    value = str(value)
+                if as_numpy and epics.ca.HAS_NUMPY and not isinstance(value, epics.ca.numpy.ndarray):
+                    if count is not None and count < len(value):
+                        value = value[:count]
+                    value = epics.ca.numpy.asarray(value)
+                elif not as_numpy and epics.ca.HAS_NUMPY and isinstance(value, epics.ca.numpy.ndarray):
+                    value = value.tolist()
+                    if count is not None and count < len(value):
+                        value = value[:count]
+                return value
             case Provider.CA:
-                return epics.caget(pvname, as_string=as_string)
+                return epics.caget(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout)
             case _:
                 if pvname not in self.pv_provider_cache:
                     try:
-                        if (value := self.get(pvname, as_string, Provider.PVA)) is not None:
+                        if (value := self.get(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, provider_override=Provider.PVA)) is not None:
                             self.pv_provider_cache[pvname] = Provider.PVA
                             return str(value) if as_string else value
                     except TimeoutError:
                         pass
-                    if (value := self.get(pvname, as_string, Provider.CA)) is not None:
+                    if (value := self.get(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, provider_override=Provider.CA)) is not None:
                         self.pv_provider_cache[pvname] = Provider.CA
                         return value
                     else:
                         return None
                 else:
-                    return self.get(pvname, as_string, self.pv_provider_cache[pvname])
+                    return self.get(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, provider_override=self.pv_provider_cache[pvname])
 
     def __getitem__(self, pvname: str):
         return self.get(pvname)
@@ -333,7 +347,7 @@ class Context:
         Issue a PUT request to a PV.
         :param str pvname: Name of the PV to PUT
         :param value: Value to put. Must be an unwrapped value of some kind
-        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
         """
         provider = self.provider_put if provider_override == Provider.INHERIT else provider_override
         match provider:
@@ -379,7 +393,7 @@ class Context:
 
         :param str pvname: Name of the PV
         :param callback: Callback for when the PV value changes
-        :param Provider provider_override: Provider to use, default of INHERIT will use the setting on the Context
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
         :return: An instance of the Monitor class, which can be used to close the monitor
         """
         provider = self.provider_mon if provider_override == Provider.INHERIT else provider_override

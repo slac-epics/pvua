@@ -24,14 +24,41 @@ class PV:
         else:
             self.ca_obj = None
 
+    def force_connect(self, pvname=None, **kwargs) -> None:
+        if self.ca_obj is not None:
+            self.ca_obj.force_connect(pvname, **kwargs)
+            if pvname is not None:
+                self.pvname = pvname
+
+    def force_read_access_rights(self) -> None:
+        if self.ca_obj is not None:
+            self.ca_obj.force_read_access_rights()
+
+    # auto_monitor
+
+    # auto_monitor_mask
+
+    def wait_for_connection(self, timeout: int | float | None = None) -> bool:
+        if self.ca_obj is not None:
+            self.ca_obj.wait_for_connection(timeout=timeout)
+        return True
+
     def connect(self, timeout: int | float | None = None) -> bool:
         if self.ca_obj is not None:
             return self.ca_obj.connect(timeout=timeout)
         return True
 
-    def wait_for_connection(self, timeout: int | float | None = None) -> bool:
+    @property
+    def connected(self) -> bool:
         if self.ca_obj is not None:
-            self.ca_obj.wait_for_connection(timeout=timeout)
+            return self.ca_obj.connected
+        return True
+
+    # clear_auto_monitor
+
+    def reconnect(self) -> bool:
+        if self.ca_obj is not None:
+            return self.ca_obj.reconnect()
         return True
 
     def get(self, as_string: bool = False):
