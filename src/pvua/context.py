@@ -138,7 +138,6 @@ class Context:
         else:
             raise TypeError(f"Unsupported NT type {pva_id}")
 
-        out = {}
         if "alarm" in value.keys():
             out.update({
                 "status": value["alarm"]["status"],
@@ -154,14 +153,14 @@ class Context:
         if "valueAlarm" in value.keys():
             out.update({
                 "upper_alarm_limit": Context._unpack_float(value["valueAlarm"]["highAlarmLimit"]),
-                "lower_alarm_limit": Context._unpack_float(value["valueAlarm"]["lowAlarm"]),
+                "lower_alarm_limit": Context._unpack_float(value["valueAlarm"]["lowAlarmLimit"]),
                 "upper_warning_limit": Context._unpack_float(value["valueAlarm"]["highWarningLimit"]),
                 "lower_warning_limit": Context._unpack_float(value["valueAlarm"]["lowWarningLimit"]),
             })
         if "control" in value.keys():
             out.update({
-                "upper_ctrl_limit": Context._unpack_float(value["control"]["highLimit"]),
-                "lower_ctrl_limit": Context._unpack_float(value["control"]["lowLimit"]),
+                "upper_ctrl_limit": Context._unpack_float(value["control"]["limitHigh"]),
+                "lower_ctrl_limit": Context._unpack_float(value["control"]["limitLow"]),
             })
         if "timeStamp" in value.keys():
             # TODO: check if posix or EPICS time
