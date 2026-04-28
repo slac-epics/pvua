@@ -5,6 +5,7 @@ from p4p.client.thread import Context as PVAContext
 # noinspection PyProtectedMember
 from p4p.client.thread import Subscription
 from p4p import Value
+from types import SimpleNamespace
 from typing import Any, Callable
 
 
@@ -16,6 +17,10 @@ class Provider(IntEnum):
 
 
 class Context:
+    """
+    A wrapper around p4p's Context class and functions in PyEPICS' ca namespace.
+    """
+
     class Monitor:
         """
         Wrapper around PV monitors. Do not instantiate directly, use the monitor method on a Context instance instead.
@@ -40,7 +45,7 @@ class Context:
         @property
         def provider(self) -> Provider:
             """
-            :return: The protocol used for the monitored PV
+            :return: The protocol used for the monitored PV.
             """
             return Provider.PVA if self.pva_subscription is not None else Provider.CA
 
@@ -48,8 +53,8 @@ class Context:
     def _posix_timestamp_to_epics(posix_seconds_past_epoch: int) -> int:
         """
         Convert a POSIX timestamp to an EPICS timestamp.
-        :param int posix_seconds_past_epoch: The POSIX timestamp to convert
-        :return: The EPICS timestamp
+        :param int posix_seconds_past_epoch: The POSIX timestamp to convert.
+        :return: The EPICS timestamp.
         """
         return posix_seconds_past_epoch - 631152000  # See POSIX_TIME_AT_EPICS_EPOCH in epicsTime.h
 
@@ -57,13 +62,13 @@ class Context:
     def _unpack_float(f: float) -> float | None:
         """
         Replace NaN with None, which signifies "not provided" in PyEPICS.
-        :param float f: Float to unpack
-        :return: The float value, or None if given NaN value
+        :param float f: Float to unpack.
+        :return: The float value, or None if given NaN value.
         """
         return None if math.isnan(f) else f
 
     @staticmethod
-    def _unpack_pva_value(value: Value, init_all_keys=False) -> dict[str, Any]:
+    def _unpack_pva_value(value: Value, init_all_keys: bool = False) -> dict[str, Any]:
         if not isinstance(value, Value):
             return {}
 
@@ -75,6 +80,7 @@ class Context:
                 "write_access",
                 "value",
                 "char_value",
+                "pva_value",
                 "count",
                 "ftype",
                 "type",
@@ -103,9 +109,7 @@ class Context:
 
         out["pva_value"] = value
 
-        # TODO: enum_strs with NTEnum: "enum_strs: the list of enumeration strings"
-
-        # TODO: Still need support for NTEnum. The rest of the NT types in the spec are seldom used.
+        # The rest of the NT types in the spec are seldom used.
         pva_id = value.getID()
         if pva_id.startswith("epics:nt/NTScalar:"):
             out["value"] = value["value"]
@@ -118,6 +122,17 @@ class Context:
             for dim in value["dimension"]:
                 out["count"] += dim["size"]
             out["char_value"] = repr(value["value"])  # seems good enough here
+        elif pva_id.startswith("epics:nt/NTEnum"):
+            # Untested -- Yell at Laura L. if this throws an error
+            choices = [str(e) for e in value["value"]["choices"]]
+            out["enum_strs"] = tuple(choices)
+            out["value"] = value["value"]["index"]
+            out["type"] = type(value["value"]["index"])
+            try:
+                out["char_value"] = choices[value["value"]["index"]]
+            except (TypeError, KeyError, IndexError):
+                out["char_value"] = str(value["value"]["index"])
+            out["count"] = len(choices)
         elif pva_id.startswith("epics:nt/NTScalarArray:"):
             # Untested -- Yell at Jeremy L. if this throws an error
             out["value"] = value["value"]
@@ -173,9 +188,9 @@ class Context:
     def __init__(self, pva_ctxt=None, provider_get=Provider.UNKNOWN, provider_put=Provider.UNKNOWN, provider_monitor=Provider.UNKNOWN):
         """
         :param pva_ctxt: p4p context to use, or None to create a new one. NOTE: In order for this to work correctly, the PVA context must be created with nt=False.
-        :param Provider provider_get: Provider override for gets
-        :param Provider provider_put: Provider override for puts
-        :param Provider provider_monitor: Provider override for monitors
+        :param Provider provider_get: Provider override for gets.
+        :param Provider provider_put: Provider override for puts.
+        :param Provider provider_monitor: Provider override for monitors.
         """
         if pva_ctxt is None:
             # noinspection PyTypeChecker
@@ -202,40 +217,47 @@ class Context:
 
     def get_provider(self, pvname: str) -> Provider:
         """
-        :param str pvname: PV to get provider of
-        :return: The provider for the given PV, or Provider.UNKNOWN if no known provider
+        :param str pvname: PV to get provider of.
+        :return: The provider for the given PV, or Provider.UNKNOWN if no known provider.
         """
         if pvname in self.pv_provider_cache:
             return self.pv_provider_cache[pvname]
         return Provider.UNKNOWN
 
+    @staticmethod
+    def _process_value_options(value: Any, count: int | None = None, as_string: bool = False, as_numpy: bool = False):
+        if as_string:
+            value = str(value)
+        if as_numpy and epics.ca.HAS_NUMPY and not isinstance(value, epics.ca.numpy.ndarray):
+            if count is not None and count < len(value):
+                value = value[:count]
+            value = epics.ca.numpy.asarray(value)
+        elif not as_numpy and epics.ca.HAS_NUMPY and isinstance(value, epics.ca.numpy.ndarray):
+            value = value.tolist()
+            if count is not None and count < len(value):
+                value = value[:count]
+        return value
+
     def get(self, pvname: str, count: int | None = None, as_string: bool = False, as_numpy: bool = False, timeout: float | None = None, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV.
-        :param int/None count: Explicit limit of the size of array values
-        :param str pvname: Name of the PV to GET
-        :param bool as_string: If true, convert the value to string before returning
-        :param bool as_numpy: If true, convert array to a NumPy array before returning
-        :param float/None timeout: Timeout in seconds to wait for a response
-        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
+        :param str pvname: Name of the PV to GET.
+        :param int/None count: Explicit limit of the size of array values.
+        :param bool as_string: If true, convert the value to string before returning.
+        :param bool as_numpy: If true, convert array to a NumPy array before returning.
+        :param float/None timeout: Timeout in seconds to wait for a response.
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
+        :return: The unwrapped value of the PV.
         """
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                value = self.pva_ctxt.get(pvname, timeout=timeout)["value"]
-                if as_string:
-                    value = str(value)
-                if as_numpy and epics.ca.HAS_NUMPY and not isinstance(value, epics.ca.numpy.ndarray):
-                    if count is not None and count < len(value):
-                        value = value[:count]
-                    value = epics.ca.numpy.asarray(value)
-                elif not as_numpy and epics.ca.HAS_NUMPY and isinstance(value, epics.ca.numpy.ndarray):
-                    value = value.tolist()
-                    if count is not None and count < len(value):
-                        value = value[:count]
-                return value
+                value = self.pva_ctxt.get(pvname, timeout=(timeout or 5.0))["value"]
+                if value is not None:
+                    return Context._process_value_options(value, count=count, as_string=as_string, as_numpy=as_numpy)
+                return None
             case Provider.CA:
-                return epics.caget(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout)
+                return epics.caget(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=(timeout or 5.0))
             case _:
                 if pvname not in self.pv_provider_cache:
                     try:
@@ -255,12 +277,65 @@ class Context:
     def __getitem__(self, pvname: str):
         return self.get(pvname)
 
-    def get_ctrlvars(self, pvname: str, provider_override: Provider = Provider.INHERIT):
+    def get_with_metadata(self, pvname: str, count: int | None = None, as_string: bool = False, as_numpy: bool = True, timeout: float | None = None, with_ctrlvars: bool = False, as_namespace: bool = False, provider_override: Provider = Provider.INHERIT):
+        """
+        Issue a GET request to a PV, returning the PV value and associated metadata.
+        :param str pvname: Name of the PV.
+        :param int/None count: Explicit limit of the size of array values.
+        :param bool as_string: If true, convert the value to string before returning.
+        :param bool as_numpy: If true, convert array to a NumPy array before returning.
+        :param float/None timeout: Timeout in seconds to wait for a response.
+        :param bool with_ctrlvars: If false, remove the ctrlvar metadata before returning.
+        :param bool as_namespace: If true, convert metadata dict to a namespace object before returning.
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
+        :return: Dictionary containing the unwrapped value of the PV and associated metadata.
+        """
+        provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
+        match provider:
+            case Provider.PVA:
+                value = self.pva_ctxt.get(pvname)
+                if value is not None:
+                    unpacked = Context._unpack_pva_value(value)
+                    unpacked["value"] = Context._process_value_options(unpacked["value"], count=count, as_string=as_string, as_numpy=as_numpy)
+                    if not with_ctrlvars:
+                        unpacked = {key: unpacked[key] for key in unpacked.keys() if key not in (
+                            "status", "severity", "precision", "units", "enum_strs",
+                            "upper_disp_limit", "lower_disp_limit", "upper_alarm_limit",
+                            "lower_alarm_limit", "upper_warning_limit", "lower_warning_limit",
+                            "upper_ctrl_limit", "lower_ctrl_limit"
+                        )}
+                    if as_namespace:
+                        return SimpleNamespace(**unpacked)
+                    return unpacked
+                return None
+            case Provider.CA:
+                data = epics.PV(pvname).get_with_metadata(count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, with_ctrlvars=with_ctrlvars, as_namespace=as_namespace)
+                if data is not None:
+                    return data
+                return None
+            case _:
+                if pvname not in self.pv_provider_cache:
+                    try:
+                        if (value := self.get_with_metadata(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, with_ctrlvars=with_ctrlvars, as_namespace=as_namespace, provider_override=Provider.PVA)) is not None:
+                            self.pv_provider_cache[pvname] = Provider.PVA
+                            return value
+                    except TimeoutError:
+                        pass
+                    if (value := self.get_with_metadata(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, with_ctrlvars=with_ctrlvars, as_namespace=as_namespace, provider_override=Provider.CA)) is not None:
+                        self.pv_provider_cache[pvname] = Provider.CA
+                        return value
+                    else:
+                        return None
+                else:
+                    return self.get_with_metadata(pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, with_ctrlvars=with_ctrlvars, as_namespace=as_namespace, provider_override=self.pv_provider_cache[pvname])
+
+    def get_ctrlvars(self, pvname: str, as_namespace: bool = False, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV, returning control variables.
-        :param str pvname: Name of the PV
-        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
-        :return: Dictionary containing control variables
+        :param str pvname: Name of the PV.
+        :param bool as_namespace: If true, convert metadata dict to a namespace object before returning.
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
+        :return: Dictionary containing control variables.
         """
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
@@ -268,45 +343,52 @@ class Context:
                 value = self.pva_ctxt.get(pvname)
                 if value is not None:
                     ctrl_data = Context._unpack_pva_value(value)
-                    return {key: ctrl_data[key] for key in (
+                    unpacked = {key: ctrl_data[key] for key in (
                         "status", "severity", "precision", "units", "enum_strs",
                         "upper_disp_limit", "lower_disp_limit", "upper_alarm_limit",
                         "lower_alarm_limit", "upper_warning_limit", "lower_warning_limit",
                         "upper_ctrl_limit", "lower_ctrl_limit"
                     ) if key in ctrl_data}
+                    if as_namespace:
+                        return SimpleNamespace(**unpacked)
+                    return unpacked
                 return None
             case Provider.CA:
                 ctrl_data = epics.PV(pvname).get_ctrlvars()
                 if ctrl_data is not None:
-                    return {key: ctrl_data[key] for key in (
+                    unpacked = {key: ctrl_data[key] for key in (
                         "status", "severity", "precision", "units", "enum_strs",
                         "upper_disp_limit", "lower_disp_limit", "upper_alarm_limit",
                         "lower_alarm_limit", "upper_warning_limit", "lower_warning_limit",
                         "upper_ctrl_limit", "lower_ctrl_limit"
                     ) if key in ctrl_data}
+                    if as_namespace:
+                        return SimpleNamespace(**unpacked)
+                    return unpacked
                 return None
             case _:
                 if pvname not in self.pv_provider_cache:
                     try:
-                        if (value := self.get_ctrlvars(pvname, Provider.PVA)) is not None:
+                        if (value := self.get_ctrlvars(pvname, as_namespace=as_namespace, provider_override=Provider.PVA)) is not None:
                             self.pv_provider_cache[pvname] = Provider.PVA
                             return value
                     except TimeoutError:
                         pass
-                    if (value := self.get_ctrlvars(pvname, Provider.CA)) is not None:
+                    if (value := self.get_ctrlvars(pvname, as_namespace=as_namespace, provider_override=Provider.CA)) is not None:
                         self.pv_provider_cache[pvname] = Provider.CA
                         return value
                     else:
                         return None
                 else:
-                    return self.get_ctrlvars(pvname, self.pv_provider_cache[pvname])
+                    return self.get_ctrlvars(pvname, as_namespace=as_namespace, provider_override=self.pv_provider_cache[pvname])
 
-    def get_timevars(self, pvname: str, provider_override: Provider = Provider.INHERIT):
+    def get_timevars(self, pvname: str, as_namespace: bool = False, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV, returning timestamp.
-        :param str pvname: Name of the PV
-        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
-        :return: Dictionary containing timestamp
+        :param str pvname: Name of the PV.
+        :param bool as_namespace: If true, convert metadata dict to a namespace object before returning.
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
+        :return: Dictionary containing timestamp.
         """
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
@@ -314,60 +396,67 @@ class Context:
                 value = self.pva_ctxt.get(pvname)
                 if value is not None:
                     time_data = Context._unpack_pva_value(value)
-                    return {key: time_data[key] for key in (
+                    unpacked = {key: time_data[key] for key in (
                         "timestamp", "posixseconds", "nanoseconds",
                     ) if key in time_data}
+                    if as_namespace:
+                        return SimpleNamespace(**unpacked)
+                    return unpacked
                 return None
             case Provider.CA:
                 time_data = epics.PV(pvname).get_timevars()
                 if time_data is not None:
-                    return {key: time_data[key] for key in (
+                    unpacked = {key: time_data[key] for key in (
                         "timestamp", "posixseconds", "nanoseconds",
                     ) if key in time_data}
+                    if as_namespace:
+                        return SimpleNamespace(**unpacked)
+                    return unpacked
                 return None
             case _:
                 if pvname not in self.pv_provider_cache:
                     try:
-                        if (value := self.get_timevars(pvname, Provider.PVA)) is not None:
+                        if (value := self.get_timevars(pvname, as_namespace=as_namespace, provider_override=Provider.PVA)) is not None:
                             self.pv_provider_cache[pvname] = Provider.PVA
                             return value
                     except TimeoutError:
                         pass
-                    if (value := self.get_timevars(pvname, Provider.CA)) is not None:
+                    if (value := self.get_timevars(pvname, as_namespace=as_namespace, provider_override=Provider.CA)) is not None:
                         self.pv_provider_cache[pvname] = Provider.CA
                         return value
                     else:
                         return None
                 else:
-                    return self.get_timevars(pvname, self.pv_provider_cache[pvname])
+                    return self.get_timevars(pvname, as_namespace=as_namespace, provider_override=self.pv_provider_cache[pvname])
 
-    def put(self, pvname: str, value, provider_override: Provider = Provider.INHERIT):
+    def put(self, pvname: str, value, timeout: float = 60.0, provider_override: Provider = Provider.INHERIT):
         """
         Issue a PUT request to a PV.
-        :param str pvname: Name of the PV to PUT
-        :param value: Value to put. Must be an unwrapped value of some kind
-        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
+        :param str pvname: Name of the PV to PUT.
+        :param value: Value to put. Must be an unwrapped value of some kind.
+        :param float timeout: Timeout in seconds to wait for a response.
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
         """
         provider = self.provider_put if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                return self.pva_ctxt.put(pvname, value)
+                return self.pva_ctxt.put(pvname, value, timeout=timeout)
             case Provider.CA:
-                return epics.caput(pvname, value)
+                return epics.caput(pvname, value, timeout=timeout)
             case _:
                 if pvname not in self.pv_provider_cache:
                     try:
-                        value = self.put(pvname, value, Provider.PVA)
+                        value = self.put(pvname, value, timeout=timeout, provider_override=Provider.PVA)
                         self.pv_provider_cache[pvname] = Provider.PVA
                         return value
                     except TimeoutError:
                         pass
-                    if (value := self.put(pvname, value, Provider.CA)) is None or value < 0:
+                    if (value := self.put(pvname, value, timeout=timeout, provider_override=Provider.CA)) is None or value < 0:
                         return None
                     self.pv_provider_cache[pvname] = Provider.CA
                     return value
                 else:
-                    return self.put(pvname, value, self.pv_provider_cache[pvname])
+                    return self.put(pvname, value, timeout=timeout, provider_override=self.pv_provider_cache[pvname])
 
     def __setitem__(self, pvname: str, value):
         return self.put(pvname, value)
@@ -375,8 +464,8 @@ class Context:
     def info_ca(self, pvname: str) -> str:
         """
         Only supported by PyEPICS.
-        :param str pvname: Name of the PV
-        :return: A human-readable string with PV metadata
+        :param str pvname: Name of the PV.
+        :return: A human-readable string with PV metadata.
         """
         return epics.cainfo(pvname, print_out=False)
 
@@ -390,10 +479,10 @@ class Context:
         - "ftype" and "chid" are *only* set for CA callbacks for informational purposes
         - "pva_value" is set for PVA callbacks and provides the full p4p.Value structure
 
-        :param str pvname: Name of the PV
-        :param callback: Callback for when the PV value changes
-        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context
-        :return: An instance of the Monitor class, which can be used to close the monitor
+        :param str pvname: Name of the PV.
+        :param callback: Callback for when the PV value changes.
+        :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
+        :return: An instance of the Monitor class, which can be used to close the monitor.
         """
         provider = self.provider_mon if provider_override == Provider.INHERIT else provider_override
         mon = None
@@ -423,6 +512,8 @@ class Context:
                     return self.monitor(pvname, callback, self.pv_provider_cache[pvname])
 
         # Add monitors to the list of registered monitors
+        if mon is None:
+            return None
         if pvname not in self.pv_monitors:
             self.pv_monitors[pvname] = []
         self.pv_monitors[pvname].append(mon)
@@ -431,7 +522,7 @@ class Context:
     def _ca_monitor_callback(self, **kwargs):
         """
         Proxies CA callbacks into the registered callbacks.
-        :param kwargs: Callback information provided by PyEPICS
+        :param kwargs: Callback information provided by PyEPICS.
         """
         if kwargs["pvname"] not in self.pv_monitors:
             return
@@ -451,8 +542,8 @@ class Context:
     def _pv_monitor_callback(self, pv: str, value: Value | Exception):
         """
         Handles unpacking of NT structures into kwargs for registered callbacks.
-        :param str pv: Name of the PV
-        :param Value/Exception value: Callback information provided by p4p
+        :param str pv: Name of the PV.
+        :param Value/Exception value: Callback information provided by p4p.
         """
         if pv not in self.pv_monitors or not isinstance(value, Value):
             return
@@ -469,10 +560,10 @@ class Context:
     def rpc_pva(self, pvname: str, value: Value, **kwargs):
         """
         Only supported by p4p.
-        :param str pvname: Name of the PV
-        :param Value value: Value to put
-        :param kwargs: Extra arguments for p4p
-        :return: A p4p Value, or an exception
+        :param str pvname: Name of the PV.
+        :param Value value: Value to put.
+        :param kwargs: Extra arguments for p4p.
+        :return: A p4p Value, or an exception.
         """
         return self.pva_ctxt.rpc(pvname, value, **kwargs)
 

@@ -23,6 +23,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docs = [
+    "sphinx",
+]
 test = [
     "caproto[standard]",
 ]

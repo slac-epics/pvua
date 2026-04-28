@@ -73,15 +73,20 @@ class PV:
         else:
             return self.context.get(self.pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, provider_override=self.provider_get_override)
 
-    # get_with_metadata
+    def get_with_metadata(self, count: int | None = None, as_string: bool = False, as_numpy: bool = True, timeout : float | None = None, with_ctrlvars: bool = False, as_namespace: bool = False):
+        if self.ca_obj is not None:
+            return self.ca_obj.get_with_metadata(count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, with_ctrlvars=with_ctrlvars, as_namespace=as_namespace)
+        return self.context.get_with_metadata(self.pvname, count=count, as_string=as_string, as_numpy=as_numpy, timeout=timeout, with_ctrlvars=with_ctrlvars, as_namespace=as_namespace, provider_override=self.provider_get_override)
 
-    def put(self, value, wait: bool = False, timeout: float = 30.0, use_complete: bool = False, callback=None, callback_data=None):
-        return self.context.put(self.pvname, value=value, provider_override=self.provider_put_override)
+    def put(self, value, timeout: float = 30.0):
+        if self.ca_obj is not None:
+            return self.ca_obj.put(value, timeout=timeout)
+        return self.context.put(self.pvname, value=value, timeout=timeout, provider_override=self.provider_put_override)
 
     def monitor(self, callback):
         return self.context.monitor(self.pvname, callback=callback, provider_override=self.provider_mon_override)
 
-    def get_ctrlvars(self):
+    def get_ctrlvars(self, as_namespace: bool = False):
         if self.ca_obj is not None:
             # Match Context::get_ctrlvars
             ctrl_data = self.ca_obj.get_ctrlvars()
@@ -91,16 +96,16 @@ class PV:
                 "lower_alarm_limit", "upper_warning_limit", "lower_warning_limit",
                 "upper_ctrl_limit", "lower_ctrl_limit"
             ) if key in ctrl_data}
-        return self.context.get_ctrlvars(self.pvname, provider_override=self.provider_get_override)
+        return self.context.get_ctrlvars(self.pvname, as_namespace=as_namespace, provider_override=self.provider_get_override)
 
-    def get_timevars(self):
+    def get_timevars(self, as_namespace: bool = False):
         if self.ca_obj is not None:
             # Match Context::get_timevars
             time_data = self.ca_obj.get_timevars()
             return {key: time_data[key] for key in (
                 "timestamp", "posixseconds", "nanoseconds",
             ) if key in time_data}
-        return self.context.get_timevars(self.pvname, self.provider_get_override)
+        return self.context.get_timevars(self.pvname, as_namespace=as_namespace, provider_override=self.provider_get_override)
 
     def run_callbacks(self) -> None:
         if self.ca_obj is not None:
@@ -202,7 +207,6 @@ class PV:
     def read_access(self) -> bool:
         if self.ca_obj is not None:
             return bool(self.ca_obj.read_access)
-        # TODO
         return True
 
     @property
@@ -319,13 +323,12 @@ class PV:
     def info(self) -> str | None:
         if self.ca_obj is not None:
             return self.ca_obj.info()
-        # TODO
         return self.context.info_ca(self.pvname)
 
     # put_complete
 
     def __str__(self) -> str:
-        return self.info()
+        return self.info() or ''
 
     def __repr__(self) -> str:
         if self.ca_obj is not None:
