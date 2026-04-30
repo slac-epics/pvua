@@ -28,6 +28,7 @@ docs = [
 ]
 test = [
     "caproto[standard]",
+    "pytest",
 ]
 
 [project.scripts]

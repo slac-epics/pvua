@@ -320,9 +320,10 @@ class PV:
             return self.ca_obj.lower_ctrl_limit
         return self.context.get_ctrlvars(self.pvname, provider_override=self.provider_get_override).get("lower_ctrl_limit")
 
+    @property
     def info(self) -> str | None:
         if self.ca_obj is not None:
-            return self.ca_obj.info()
+            return self.ca_obj.info
         return self.context.info_ca(self.pvname)
 
     # put_complete

@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import IntEnum
 import epics
 import math
@@ -122,7 +123,7 @@ class Context:
             for dim in value["dimension"]:
                 out["count"] += dim["size"]
             out["char_value"] = repr(value["value"])  # seems good enough here
-        elif pva_id.startswith("epics:nt/NTEnum"):
+        elif pva_id.startswith("epics:nt/NTEnum:"):
             # Untested -- Yell at Laura L. if this throws an error
             choices = [str(e) for e in value["value"]["choices"]]
             out["enum_strs"] = tuple(choices)
@@ -137,7 +138,7 @@ class Context:
             # Untested -- Yell at Jeremy L. if this throws an error
             out["value"] = value["value"]
             out["type"] = type(value["value"][0])
-            out["char_value"] = str(" ".join(value["value"]))
+            out["char_value"] = str(" ".join([str(v) for v in value["value"]]))
             out["count"] = len(value["value"])
         elif pva_id.startswith("epics:nt/NTTable:"):
             # Untested -- Yell at Jeremy L. if this throws an error
@@ -180,7 +181,7 @@ class Context:
         if "timeStamp" in value.keys():
             # TODO: check if posix or EPICS time
             out["timestamp"] = float(value["timeStamp"]["secondsPastEpoch"]) + (value["timeStamp"]["nanoseconds"] / 1e9)
-            out["posixseconds"] = value["timeStamp"]["secondsPastEpoch"],
+            out["posixseconds"] = value["timeStamp"]["secondsPastEpoch"][0] if isinstance(value["timeStamp"]["secondsPastEpoch"], tuple) else value["timeStamp"]["secondsPastEpoch"]
             out["nanoseconds"] = value["timeStamp"]["nanoseconds"]
 
         return out
@@ -226,6 +227,8 @@ class Context:
 
     @staticmethod
     def _process_value_options(value: Any, count: int | None = None, as_string: bool = False, as_numpy: bool = False):
+        if isinstance(value, Value):
+            value = Context._unpack_pva_value(value)["value"]
         if as_string:
             value = str(value)
         if as_numpy and epics.ca.HAS_NUMPY and not isinstance(value, epics.ca.numpy.ndarray):
@@ -252,7 +255,7 @@ class Context:
         provider = self.provider_get if provider_override == Provider.INHERIT else provider_override
         match provider:
             case Provider.PVA:
-                value = self.pva_ctxt.get(pvname, timeout=(timeout or 5.0))["value"]
+                value = self.pva_ctxt.get(pvname, timeout=(timeout or 5.0))
                 if value is not None:
                     return Context._process_value_options(value, count=count, as_string=as_string, as_numpy=as_numpy)
                 return None

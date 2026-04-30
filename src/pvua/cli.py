@@ -1,3 +1,4 @@
+from datetime import datetime
 import sys
 import time
 
@@ -19,8 +20,9 @@ def cli_universal(command: str, provider: Provider, pvname: str, pv_value: str |
 
     match command:
         case "get":
-            print(f"{ctx.get(pvname, provider_override=provider)}")
-            print(f"Time: {ctx.get_timevars(pvname, provider_override=provider)}")
+            timevars = ctx.get_timevars(pvname, provider_override=provider)
+            ms, ns = divmod((int(timevars['posixseconds'] * 1_000_000_000) + timevars['nanoseconds']) // 1_000_000, 1_000)
+            print(f"{pvname}\t{ctx.get(pvname, provider_override=provider)}\t{datetime.fromtimestamp(ms).strftime(f"%Y:%m:%d %H:%M:%S.{ns:03d}")}")
         case "info":
             if provider == Provider.PVA:
                 print("Info command unimplemented for PVA.")
