@@ -155,29 +155,33 @@ class Context:
             raise TypeError(f"Unsupported NT type {pva_id}")
 
         if "alarm" in value.keys():
-            out.update({
-                "status": value["alarm"]["status"],
-                "severity": value["alarm"]["severity"],
-            })
+            if "status" in value["alarm"].keys():
+                out["status"] = value["alarm"]["status"]
+            if "severity" in value["alarm"].keys():
+                out["severity"] = value["alarm"]["severity"]
         if "display" in value.keys():
-            out.update({
-                "precision": value["display"]["precision"],
-                "units": value["display"]["units"],
-                "upper_disp_limit": Context._unpack_float(value["display"]["limitHigh"]),
-                "lower_disp_limit": Context._unpack_float(value["display"]["limitLow"]),
-            })
+            if "precision" in value["display"].keys():
+                out["precision"] = value["display"]["precision"]
+            if "units" in value["display"].keys():
+                out["units"] = value["display"]["units"]
+            if "limitHigh" in value["display"].keys():
+                out["upper_disp_limit"] = Context._unpack_float(value["display"]["limitHigh"])
+            if "limitLow" in value["display"].keys():
+                out["lower_disp_limit"] = Context._unpack_float(value["display"]["limitLow"])
         if "valueAlarm" in value.keys():
-            out.update({
-                "upper_alarm_limit": Context._unpack_float(value["valueAlarm"]["highAlarmLimit"]),
-                "lower_alarm_limit": Context._unpack_float(value["valueAlarm"]["lowAlarmLimit"]),
-                "upper_warning_limit": Context._unpack_float(value["valueAlarm"]["highWarningLimit"]),
-                "lower_warning_limit": Context._unpack_float(value["valueAlarm"]["lowWarningLimit"]),
-            })
+            if "highAlarmLimit" in value["valueAlarm"].keys():
+                out["upper_alarm_limit"] = Context._unpack_float(value["valueAlarm"]["highAlarmLimit"])
+            if "lowAlarmLimit" in value["valueAlarm"].keys():
+                out["lower_alarm_limit"] = Context._unpack_float(value["valueAlarm"]["lowAlarmLimit"])
+            if "highWarningLimit" in value["valueAlarm"].keys():
+                out["upper_warning_limit"] = Context._unpack_float(value["valueAlarm"]["highWarningLimit"])
+            if "lowWarningLimit" in value["valueAlarm"].keys():
+                out["lower_warning_limit"] = Context._unpack_float(value["valueAlarm"]["lowWarningLimit"])
         if "control" in value.keys():
-            out.update({
-                "upper_ctrl_limit": Context._unpack_float(value["control"]["limitHigh"]),
-                "lower_ctrl_limit": Context._unpack_float(value["control"]["limitLow"]),
-            })
+            if "limitHigh" in value["control"].keys():
+                out["upper_ctrl_limit"] = Context._unpack_float(value["control"]["limitHigh"])
+            if "limitLow" in value["control"].keys():
+                out["lower_ctrl_limit"] = Context._unpack_float(value["control"]["limitLow"])
         if "timeStamp" in value.keys():
             # TODO: check if posix or EPICS time
             out["timestamp"] = float(value["timeStamp"]["secondsPastEpoch"]) + (value["timeStamp"]["nanoseconds"] / 1e9)
