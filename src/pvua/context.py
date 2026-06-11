@@ -54,6 +54,7 @@ class Context:
     def _posix_timestamp_to_epics(posix_seconds_past_epoch: int) -> int:
         """
         Convert a POSIX timestamp to an EPICS timestamp.
+
         :param int posix_seconds_past_epoch: The POSIX timestamp to convert.
         :return: The EPICS timestamp.
         """
@@ -63,6 +64,7 @@ class Context:
     def _unpack_float(f: float) -> float | None:
         """
         Replace NaN with None, which signifies "not provided" in PyEPICS.
+
         :param float f: Float to unpack.
         :return: The float value, or None if given NaN value.
         """
@@ -213,6 +215,7 @@ class Context:
     def determine_providers(self, pvnames: list[str]) -> None:
         """
         Given a list of PVs, issue a GET per PV to cache the available provider.
+
         :param list[str] pvnames: List of PVs to cache. If they're already cached, they will be skipped.
         """
         for pvname in pvnames:
@@ -248,11 +251,12 @@ class Context:
     def get(self, pvname: str, count: int | None = None, as_string: bool = False, as_numpy: bool = False, timeout: float | None = None, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV.
+
         :param str pvname: Name of the PV to GET.
-        :param int/None count: Explicit limit of the size of array values.
+        :param int|None count: Explicit limit of the size of array values.
         :param bool as_string: If true, convert the value to string before returning.
         :param bool as_numpy: If true, convert array to a NumPy array before returning.
-        :param float/None timeout: Timeout in seconds to wait for a response.
+        :param float|None timeout: Timeout in seconds to wait for a response.
         :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
         :return: The unwrapped value of the PV.
         """
@@ -287,11 +291,12 @@ class Context:
     def get_with_metadata(self, pvname: str, count: int | None = None, as_string: bool = False, as_numpy: bool = True, timeout: float | None = None, with_ctrlvars: bool = False, as_namespace: bool = False, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV, returning the PV value and associated metadata.
+
         :param str pvname: Name of the PV.
-        :param int/None count: Explicit limit of the size of array values.
+        :param int|None count: Explicit limit of the size of array values.
         :param bool as_string: If true, convert the value to string before returning.
         :param bool as_numpy: If true, convert array to a NumPy array before returning.
-        :param float/None timeout: Timeout in seconds to wait for a response.
+        :param float|None timeout: Timeout in seconds to wait for a response.
         :param bool with_ctrlvars: If false, remove the ctrlvar metadata before returning.
         :param bool as_namespace: If true, convert metadata dict to a namespace object before returning.
         :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
@@ -339,6 +344,7 @@ class Context:
     def get_ctrlvars(self, pvname: str, as_namespace: bool = False, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV, returning control variables.
+
         :param str pvname: Name of the PV.
         :param bool as_namespace: If true, convert metadata dict to a namespace object before returning.
         :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
@@ -392,6 +398,7 @@ class Context:
     def get_timevars(self, pvname: str, as_namespace: bool = False, provider_override: Provider = Provider.INHERIT):
         """
         Issue a GET request to a PV, returning timestamp.
+
         :param str pvname: Name of the PV.
         :param bool as_namespace: If true, convert metadata dict to a namespace object before returning.
         :param Provider provider_override: Provider to use. Default of INHERIT will use the setting on the Context.
@@ -439,6 +446,7 @@ class Context:
     def put(self, pvname: str, value, timeout: float = 60.0, provider_override: Provider = Provider.INHERIT):
         """
         Issue a PUT request to a PV.
+
         :param str pvname: Name of the PV to PUT.
         :param value: Value to put. Must be an unwrapped value of some kind.
         :param float timeout: Timeout in seconds to wait for a response.
@@ -471,6 +479,7 @@ class Context:
     def info_ca(self, pvname: str) -> str:
         """
         Only supported by PyEPICS.
+
         :param str pvname: Name of the PV.
         :return: A human-readable string with PV metadata.
         """
@@ -529,6 +538,7 @@ class Context:
     def _ca_monitor_callback(self, **kwargs):
         """
         Proxies CA callbacks into the registered callbacks.
+
         :param kwargs: Callback information provided by PyEPICS.
         """
         if kwargs["pvname"] not in self.pv_monitors:
@@ -549,6 +559,7 @@ class Context:
     def _pv_monitor_callback(self, pv: str, value: Value | Exception):
         """
         Handles unpacking of NT structures into kwargs for registered callbacks.
+
         :param str pv: Name of the PV.
         :param Value/Exception value: Callback information provided by p4p.
         """
@@ -567,6 +578,7 @@ class Context:
     def rpc_pva(self, pvname: str, value: Value, **kwargs):
         """
         Only supported by p4p.
+
         :param str pvname: Name of the PV.
         :param Value value: Value to put.
         :param kwargs: Extra arguments for p4p.
